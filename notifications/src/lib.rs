@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, time::Duration, vec};
 
 use futures::channel::mpsc::Sender;
+pub use id::Id;
 #[allow(unused_imports)]
 use log::*;
 pub use server_info::ServerInfo;
@@ -12,11 +13,38 @@ use zbus::{
     zvariant::{OwnedValue as Value, Type},
 };
 
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum Action {}
+mod id {
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum Hint {}
+    static ID: AtomicU32 = AtomicU32::new(0);
+
+    pub struct Id(u32);
+
+    impl Id {
+        pub fn new() -> Self {
+            Self(Self::current_glob())
+        }
+
+        pub fn current_glob() -> u32 {
+            ID.load(Ordering::Relaxed)
+        }
+
+        pub fn bump_glob() -> u32 {
+            ID.fetch_add(1, Ordering::Relaxed) + 1
+        }
+
+        pub fn bump(&mut self) -> u32 {
+            self.0 = Self::bump_glob();
+            self.0
+        }
+    }
+
+    impl Default for Id {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Details {
@@ -86,7 +114,6 @@ mod server_info {
 
 #[derive(Debug)]
 pub struct IFace {
-    notify_counter: u32,
     server_info: ServerInfo,
     sender: Sender<Message>,
 }
@@ -100,7 +127,7 @@ impl IFace {
             "body",
             // "body-hyperlinks",
             // "body-images",
-            // "body-markup",
+            "body-markup",
             // "icon-multi",
             // "icon-static",
             // "persistence",
@@ -120,11 +147,10 @@ impl IFace {
         _hints: HashMap<&str, Value>,
         expire_timeout: i32,
     ) -> u32 {
-        let notification_id = if replaces_id != 0 && replaces_id <= self.notify_counter {
+        let notification_id = if replaces_id != 0 && replaces_id <= Id::current_glob() {
             replaces_id
         } else {
-            self.notify_counter += 1;
-            self.notify_counter
+            Id::bump_glob()
         };
 
         let details = Details {
@@ -206,18 +232,17 @@ static BUS_NAME: &str = "org.freedesktop.Notifications";
 static BUS_OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
 impl IFace {
-    pub fn connect(
-        server_info: ServerInfo,
-        sender: Sender<Message>,
-    ) -> Result<InterfaceRef<Self>, zbus::Error> {
-        let iface = Self {
-            notify_counter: 0,
+    pub fn new(server_info: ServerInfo, sender: Sender<Message>) -> Self {
+        Self {
             server_info,
             sender,
-        };
+        }
+    }
+
+    pub fn connect(self) -> Result<InterfaceRef<Self>, zbus::Error> {
         let connection = ConnectionBuilder::session()?
             .name(BUS_NAME)?
-            .serve_at(BUS_OBJECT_PATH, iface)?
+            .serve_at(BUS_OBJECT_PATH, self)?
             .build()?;
 
         let i = connection.object_server().interface(BUS_OBJECT_PATH)?;

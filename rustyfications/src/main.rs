@@ -1,26 +1,25 @@
 mod types;
+mod utils;
 
-use std::{rc::Rc, sync::Arc, time::Duration};
+use std::{error::Error, rc::Rc, sync::Arc, time::Duration};
 
 use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
-    glib::{self, clone, JoinHandle},
-    pango::EllipsizeMode,
+    glib::{self, clone},
     prelude::*,
-    Align, Justification, Orientation,
 };
 use gtk_layer_shell::{Edge, LayerShell};
 #[allow(unused_imports)]
 use log::*;
 use notifications::{Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use types::{RuntimeData, Window};
+use utils::{close_hook, load_css};
 
 pub static MAIN_APP_ID: &str = "com.bzglve.rustyfications";
 
-pub static RESPECT_EXPIRE_TIMEOUT: bool = false;
 pub static DEFAULT_EXPIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn main() -> Result<(), glib::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let runtime_data = RuntimeData::default();
@@ -31,101 +30,88 @@ fn main() -> Result<(), glib::Error> {
     let receiver = Arc::new(Mutex::new(receiver));
 
     let iface = Rc::new(
-        IFace::connect(
+        IFace::new(
             ServerInfo::new("rustyfications", "bzglve", "0.1.0", "1.2"),
             sender,
         )
+        .connect()
         .unwrap(),
     );
 
-    glib::spawn_future_local(clone!(
-        #[strong]
-        application,
-        #[strong]
-        receiver,
-        #[strong]
-        iface,
-        #[strong]
-        runtime_data,
-        async move {
-            loop {
-                let input = receiver.lock().await.select_next_some().await;
-                debug!("input: {:?}", input);
+    application.connect_startup(move |application| {
+        let settings = gtk::Settings::default().unwrap();
+        settings.connect_gtk_theme_name_notify(|_| load_css());
+        settings.connect_gtk_application_prefer_dark_theme_notify(|_| load_css());
 
-                match input {
-                    Message::New(details) => new_notification(
-                        details,
-                        application.clone(),
-                        iface.clone(),
-                        runtime_data.clone(),
-                    ),
-                    Message::Replace(details) => {
-                        let windows = runtime_data.borrow().windows.clone();
-                        match windows.get(&details.id) {
-                            Some(window) => {
-                                let timeout;
-                                unsafe {
-                                    timeout = window
-                                        .inner
-                                        .data::<JoinHandle<()>>("timeout")
-                                        .map(|v| v.as_ref());
-                                }
-                                if let Some(timeout) = timeout {
-                                    timeout.abort();
-                                }
+        glib::spawn_future_local(clone!(
+            #[strong]
+            application,
+            #[strong]
+            receiver,
+            #[strong]
+            iface,
+            #[strong]
+            runtime_data,
+            async move {
+                loop {
+                    let input = receiver.lock().await.select_next_some().await;
+                    debug!("{:?}", input);
 
-                                if let Some(expire_timeout) = details.expire_timeout {
-                                    window_expire(
-                                        expire_timeout,
-                                        details.id,
+                    match input {
+                        Message::New(details) => new_notification(
+                            details,
+                            application.clone(),
+                            iface.clone(),
+                            runtime_data.clone(),
+                        ),
+                        Message::Replace(details) => {
+                            let mut windows = runtime_data.borrow().windows.clone();
+                            match windows.get_mut(&details.id) {
+                                Some(window) => {
+                                    window.stop_timeout();
+                                    window.start_timeout(clone!(
+                                        #[strong]
+                                        iface,
+                                        #[strong]
+                                        runtime_data,
+                                        move |id| async move {
+                                            close_hook(id, iface.clone(), runtime_data.clone())
+                                                .await;
+                                        }
+                                    ));
+
+                                    window.summary.set_label(&details.summary);
+
+                                    window
+                                        .body
+                                        .set_label(&details.body.clone().unwrap_or_default());
+                                    window.body.set_visible(details.body.is_some());
+                                }
+                                None => {
+                                    debug!("NOT FOUND");
+                                    new_notification(
+                                        details,
+                                        application.clone(),
                                         iface.clone(),
                                         runtime_data.clone(),
                                     );
-                                } else if !RESPECT_EXPIRE_TIMEOUT {
-                                    window_expire(
-                                        DEFAULT_EXPIRE_TIMEOUT,
-                                        details.id,
-                                        iface.clone(),
-                                        runtime_data.clone(),
-                                    );
                                 }
-
-                                // TODO update window widgets
-                                window.summary.set_label(&details.summary);
-
-                                window
-                                    .body
-                                    .set_label(&details.body.clone().unwrap_or_default());
-                                window.body.set_visible(details.body.is_some());
-                            }
-                            None => {
-                                debug!("NOT FOUND");
-                                new_notification(
-                                    details,
-                                    application.clone(),
-                                    iface.clone(),
-                                    runtime_data.clone(),
-                                );
                             }
                         }
-                    }
-                    Message::Close(id) => {
-                        window_close(id, runtime_data.clone());
+                        Message::Close(id) => {
+                            window_close(id, runtime_data.clone());
+                        }
                     }
                 }
             }
-        }
-    ));
+        ));
+
+        load_css();
+    });
 
     application.connect_activate(|application| {
-        let window = gtk::Window::builder().build();
-        window.set_child(Some(&gtk::Label::new(Some("Hello"))));
-
-        window.init_layer_shell();
-
-        window.set_application(Some(application));
-
-        // window.present();
+        let w = gtk::Window::new();
+        w.set_application(Some(application));
     });
 
     application.run();
@@ -145,11 +131,6 @@ fn new_notification(
 
     window.inner.present();
 
-    // window.set_margin(
-    //     Edge::Top,
-    //     (runtime_data.borrow().windows.len() as i32) * 100,
-    // );
-
     let gesture_click = gtk::GestureClick::new();
     window.inner.add_controller(gesture_click.clone());
 
@@ -167,6 +148,10 @@ fn new_notification(
                 #[strong]
                 iface,
                 async move {
+                    IFace::action_invoked(iface.signal_context(), details.id, "default")
+                        .await
+                        .unwrap();
+
                     IFace::notification_closed(
                         iface.signal_context(),
                         details.id,
@@ -182,29 +167,41 @@ fn new_notification(
     let event_controller_motion = gtk::EventControllerMotion::new();
     window.inner.add_controller(event_controller_motion.clone());
 
-    event_controller_motion.connect_enter(move |_ecm, x, y| {
-        debug!("ECM ENTER | {} | {} |", x, y);
-    });
+    event_controller_motion.connect_enter(clone!(
+        #[strong]
+        window,
+        move |_ecm, _x, _y| {
+            window.inner.add_css_class("hover");
 
-    event_controller_motion.connect_leave(move |_ecm| {
-        debug!("ECM LEAVE");
-    });
+            window.stop_timeout();
+        }
+    ));
 
-    if let Some(expire_timeout) = details.expire_timeout {
-        window_expire(
-            expire_timeout,
-            details.id,
-            iface.clone(),
-            runtime_data.clone(),
-        );
-    } else if !RESPECT_EXPIRE_TIMEOUT {
-        window_expire(
-            DEFAULT_EXPIRE_TIMEOUT,
-            details.id,
-            iface.clone(),
-            runtime_data.clone(),
-        );
-    }
+    event_controller_motion.connect_leave(clone!(
+        #[strong]
+        window,
+        #[strong]
+        iface,
+        #[strong]
+        runtime_data,
+        move |_ecm| {
+            window.inner.remove_css_class("hover");
+
+            window.start_timeout(clone!(
+                #[strong]
+                iface,
+                #[strong]
+                runtime_data,
+                move |id| async move {
+                    close_hook(id, iface.clone(), runtime_data.clone()).await;
+                }
+            ));
+        }
+    ));
+
+    window.start_timeout(move |id| async move {
+        close_hook(id, iface.clone(), runtime_data.clone()).await;
+    });
 }
 
 fn init_layer_shell(window: &impl LayerShell) {
@@ -214,8 +211,6 @@ fn init_layer_shell(window: &impl LayerShell) {
     window.set_anchor(Edge::Right, true);
 
     window.set_margin(Edge::Right, 4);
-
-    // window.set_keyboard_mode(KeyboardMode::OnDemand);
 }
 
 fn window_build(
@@ -241,12 +236,6 @@ fn window_close(id: u32, runtime_data: RuntimeData) {
     if let Some(window) = runtime_data.borrow_mut().windows.remove(&id) {
         window.inner.close();
     }
-    // runtime_data
-    //     .borrow()
-    //     .windows
-    //     .iter()
-    //     .enumerate()
-    //     .for_each(|(i, (_, window))| window.set_margin(Edge::Top, (i as i32) * 100));
 
     margins_update(runtime_data);
 }
@@ -254,43 +243,15 @@ fn window_close(id: u32, runtime_data: RuntimeData) {
 fn margins_update(runtime_data: RuntimeData) {
     use itertools::Itertools;
 
-    let mut h = 4;
+    let mut indent = 4;
 
     if let Some((_, w)) = runtime_data.borrow().windows.iter().next() {
-        w.inner.set_margin(Edge::Top, h)
+        w.inner.set_margin(Edge::Top, indent);
     }
 
     for ((_, lw), (_, rw)) in runtime_data.borrow().windows.iter().tuple_windows() {
-        h += lw.inner.height() + 4;
+        indent += lw.inner.height() + 5;
 
-        rw.inner.set_margin(Edge::Top, h);
-    }
-}
-
-fn window_expire(value: Duration, id: u32, iface: Rc<IFaceRef>, runtime_data: RuntimeData) {
-    let timeout = glib::spawn_future_local(clone!(
-        #[strong]
-        iface,
-        #[strong]
-        runtime_data,
-        async move {
-            glib::timeout_future(value).await;
-
-            window_close(id, runtime_data.clone());
-
-            IFace::notification_closed(iface.signal_context(), id, Reason::Expired)
-                .await
-                .unwrap();
-        }
-    ));
-
-    if let Ok(borrowed) = runtime_data.try_borrow() {
-        if let Some(window) = borrowed.windows.get(&id) {
-            unsafe {
-                window.inner.set_data("timeout", timeout);
-            }
-        }
-    } else {
-        warn!("Cannot borrow runtime_data on: {:?}", id)
+        rw.inner.set_margin(Edge::Top, indent);
     }
 }
