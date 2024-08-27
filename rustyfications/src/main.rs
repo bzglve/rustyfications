@@ -18,6 +18,7 @@ use utils::{close_hook, load_css};
 pub static MAIN_APP_ID: &str = "com.bzglve.rustyfications";
 
 pub static DEFAULT_EXPIRE_TIMEOUT: Duration = Duration::from_secs(5);
+pub static NEW_ON_TOP: bool = true;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -127,9 +128,28 @@ fn new_notification(
 ) {
     let window = window_build(&details, application.clone(), runtime_data.clone());
 
-    margins_update(runtime_data.clone());
-
     window.inner.present();
+
+    if !NEW_ON_TOP {
+        margins_update(runtime_data.clone());
+    } else {
+        glib::timeout_add_local(
+            Duration::from_millis(50),
+            clone!(
+                #[strong]
+                window,
+                #[strong]
+                runtime_data,
+                move || {
+                    if window.inner.is_mapped() {
+                        margins_update(runtime_data.clone());
+                        return glib::ControlFlow::Break;
+                    }
+                    glib::ControlFlow::Continue
+                }
+            ),
+        );
+    }
 
     let gesture_click = gtk::GestureClick::new();
     window.inner.add_controller(gesture_click.clone());
@@ -210,7 +230,7 @@ fn init_layer_shell(window: &impl LayerShell) {
     window.set_anchor(Edge::Top, true);
     window.set_anchor(Edge::Right, true);
 
-    window.set_margin(Edge::Right, 4);
+    window.set_margin(Edge::Right, 5);
 }
 
 fn window_build(
@@ -241,17 +261,18 @@ fn window_close(id: u32, runtime_data: RuntimeData) {
 }
 
 fn margins_update(runtime_data: RuntimeData) {
-    use itertools::Itertools;
+    let runtime_data = runtime_data.borrow();
+    let windows = runtime_data.windows.iter();
 
-    let mut indent = 4;
-
-    if let Some((_, w)) = runtime_data.borrow().windows.iter().next() {
-        w.inner.set_margin(Edge::Top, indent);
-    }
-
-    for ((_, lw), (_, rw)) in runtime_data.borrow().windows.iter().tuple_windows() {
-        indent += lw.inner.height() + 5;
-
-        rw.inner.set_margin(Edge::Top, indent);
+    let iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if NEW_ON_TOP {
+        Box::new(windows.rev())
+    } else {
+        Box::new(windows)
+    };
+    : Box<dyn Iterator<Item = (&u32, &Window)>>
+    let mut indent = 5;
+    for (_, window) in iter {
+        window.inner.set_margin(Edge::Top, indent);
+        indent += window.inner.height() + 5;
     }
 }

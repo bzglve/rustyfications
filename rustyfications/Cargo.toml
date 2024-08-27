@@ -1,6 +1,6 @@
 [package]
 name = "rustyfications"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
@@ -8,7 +8,6 @@ env_logger = "0.11"
 futures = "0.3"
 gtk = { version = "0.9", package = "gtk4" }
 gtk-layer-shell = { version = "0.4", package = "gtk4-layer-shell" }
-itertools = "0.13"
 log = "0.4"
 notifications = { version = "0.1", path = "../notifications" }
 time = { version = "0.3", features = ["local-offset"] }
