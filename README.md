@@ -5,6 +5,8 @@ Rusty notification daemon for Wayland.
 ---
 ![screenshot](assets/screenshot.png)
 
+![screenshot-icons-hyprlink](assets/screenshot-icons-hyprlink.png)
+
 `Rust` | `Gtk4` | `gtk4-layer-shell`
 
 ---

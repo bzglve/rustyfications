@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "rustyfications"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "env_logger",
  "futures",
