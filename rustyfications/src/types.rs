@@ -34,6 +34,7 @@ mod window {
         pub inner: gtk::Window,
     }
 
+    // TODO need a function to update self fields from Details
     impl Window {
         pub fn stop_timeout(&self) {
             if let Some(h) = self.thandle.borrow().as_ref() {
@@ -108,10 +109,13 @@ mod window {
             for action in value.actions {
                 actions_box.set_visible(true);
                 actions_box.append(&{
-                    let btn = gtk::Button::builder()
-                        .label(action.to_string())
-                        .hexpand(true)
-                        .build();
+                    let btn = gtk::Button::builder().hexpand(true).build();
+                    if !action.icon {
+                        btn.set_label(&action.to_string());
+                    } else {
+                        btn.set_icon_name(&action.to_string());
+                        btn.set_tooltip_text(Some(&action.to_string()));
+                    }
 
                     btn.connect_clicked(clone!(
                         #[strong]

@@ -1,7 +1,13 @@
+mod action;
+mod hints;
+mod id;
+mod server_info;
+
 use std::{cmp::Ordering, collections::HashMap, time::Duration, vec};
 
 pub use action::Action;
 use futures::channel::mpsc::Sender;
+pub use hints::Hints;
 pub use id::Id;
 #[allow(unused_imports)]
 use log::*;
@@ -14,89 +20,8 @@ use zbus::{
     zvariant::{OwnedValue as Value, Type},
 };
 
-mod id {
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static ID: AtomicU32 = AtomicU32::new(0);
-
-    pub struct Id(u32);
-
-    impl Id {
-        pub fn new() -> Self {
-            Self(Self::current_glob())
-        }
-
-        pub fn current_glob() -> u32 {
-            ID.load(Ordering::Relaxed)
-        }
-
-        pub fn bump_glob() -> u32 {
-            ID.fetch_add(1, Ordering::Relaxed) + 1
-        }
-
-        pub fn bump(&mut self) -> u32 {
-            self.0 = Self::bump_glob();
-            self.0
-        }
-    }
-
-    impl Default for Id {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-}
-
-mod action {
-    use zbus::zvariant::Type;
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Action {
-        key: String,
-        text: String,
-    }
-
-    impl Action {
-        pub fn new(key: &str, text: &str) -> Self {
-            Self {
-                key: key.to_owned(),
-                text: text.to_owned(),
-            }
-        }
-    }
-
-    // TODO need to be sure that this is like that
-    impl Default for Action {
-        fn default() -> Self {
-            Self {
-                key: "default".to_owned(),
-                text: "Default".to_owned(),
-            }
-        }
-    }
-
-    #[allow(clippy::to_string_trait_impl)]
-    impl ToString for Action {
-        fn to_string(&self) -> String {
-            self.text.clone()
-        }
-    }
-
-    impl serde::Serialize for Action {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            serializer.serialize_str(&self.key)
-        }
-    }
-
-    impl Type for Action {
-        fn signature() -> zbus::zvariant::Signature<'static> {
-            zbus::zvariant::Signature::from_str_unchecked("s")
-        }
-    }
-}
+static BUS_NAME: &str = "org.freedesktop.Notifications";
+static BUS_OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Details {
@@ -106,7 +31,7 @@ pub struct Details {
     pub summary: String,
     pub body: Option<String>,
     pub actions: Vec<Action>,
-    // pub hints: Vec<Hint>, // TODO
+    // pub hints: Vec<>,
     pub expire_timeout: Option<Duration>,
 }
 
@@ -131,39 +56,6 @@ pub enum Reason {
     Undefined = 4,
 }
 
-mod server_info {
-    use super::Type;
-
-    #[derive(serde::Serialize, Type, Debug, Clone)]
-    pub struct ServerInfo {
-        /// The product name of the server.
-        name: String,
-        /// The vendor name. For example, "KDE," "GNOME," "freedesktop.org," or "Microsoft."
-        vendor: String,
-        /// The server's version number.
-        version: String,
-        /// The specification version the server is compliant with.
-        spec_version: String,
-    }
-
-    impl ServerInfo {
-        pub fn new(name: &str, vendor: &str, version: &str, spec_version: &str) -> Self {
-            Self {
-                name: name.to_owned(),
-                vendor: vendor.to_owned(),
-                version: version.to_owned(),
-                spec_version: spec_version.to_owned(),
-            }
-        }
-    }
-
-    impl From<ServerInfo> for (String, String, String, String) {
-        fn from(value: ServerInfo) -> Self {
-            (value.name, value.vendor, value.version, value.spec_version)
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct IFace {
     server_info: ServerInfo,
@@ -173,8 +65,12 @@ pub struct IFace {
 #[interface(name = "org.freedesktop.Notifications")]
 impl IFace {
     fn get_capabilities(&self) -> Vec<&str> {
+        // TODO this list probably can be in config
+        // to allow user modify what he want to use
+        // e.g. disable sound or icons
+        // all other stuff that implemented one of capabilities should also check and skip processing if off
         vec![
-            // "action-icons",
+            "action-icons",
             "actions",
             "body",
             // "body-hyperlinks",
@@ -196,7 +92,7 @@ impl IFace {
         summary: &str,
         body: &str,
         actions: Vec<&str>,
-        _hints: HashMap<&str, Value>,
+        hints: HashMap<&str, Value>,
         expire_timeout: i32,
     ) -> u32 {
         let notification_id = if replaces_id != 0 && replaces_id <= Id::current_glob() {
@@ -204,6 +100,9 @@ impl IFace {
         } else {
             Id::bump_glob()
         };
+
+        let hints: Hints = Hints::from(hints);
+        debug!("hints: {:?}", hints);
 
         let details = Details {
             id: notification_id,
@@ -225,7 +124,7 @@ impl IFace {
             },
             actions: actions
                 .chunks_exact(2)
-                .map(|t| Action::new(t[0], t[1]))
+                .map(|t| Action::new(t[0], t[1], hints.action_icons))
                 .collect(),
             expire_timeout: match expire_timeout.cmp(&0) {
                 Ordering::Less => None,
@@ -283,9 +182,6 @@ impl IFace {
         activation_token: &str,
     ) -> zbus::Result<()>;
 }
-
-static BUS_NAME: &str = "org.freedesktop.Notifications";
-static BUS_OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
 impl IFace {
     pub fn new(server_info: ServerInfo, sender: Sender<Message>) -> Self {

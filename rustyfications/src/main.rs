@@ -81,6 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                     ));
 
+                                    // TODO update all other fields
                                     window.summary.set_label(&details.summary);
 
                                     window
