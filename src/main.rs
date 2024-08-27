@@ -1,19 +1,20 @@
+mod dbus;
+mod gui;
 mod types;
 mod utils;
-mod dbus;
 
 use std::{error::Error, rc::Rc, sync::Arc, time::Duration};
 
+use dbus::{Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
     glib::{self, clone},
     prelude::*,
 };
-use gtk_layer_shell::{Edge, LayerShell};
+use gui::{build_ui, utils::margins_update, window::Window};
 #[allow(unused_imports)]
 use log::*;
-use dbus::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
-use types::{RuntimeData, Window};
+use types::RuntimeData;
 use utils::{close_hook, load_css};
 
 pub static MAIN_APP_ID: &str = "com.bzglve.rustyfications";
@@ -70,28 +71,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let mut windows = runtime_data.borrow().windows.clone();
                             match windows.get_mut(&details.id) {
                                 Some(window) => {
-                                    window.stop_timeout();
+                                    window.update_from_details(&details, iface.clone());
+
                                     window.start_timeout(clone!(
                                         #[strong]
                                         iface,
                                         #[strong]
                                         runtime_data,
                                         move |id| async move {
-                                            close_hook(id, iface.clone(), runtime_data.clone())
-                                                .await;
+                                            close_hook(
+                                                id,
+                                                Reason::Expired,
+                                                iface.clone(),
+                                                runtime_data.clone(),
+                                            )
+                                            .await;
                                         }
                                     ));
-
-                                    // TODO update all other fields
-                                    window.summary.set_label(&details.summary);
-
-                                    window
-                                        .body
-                                        .set_label(&details.body.clone().unwrap_or_default());
-                                    window.body.set_visible(details.body.is_some());
                                 }
                                 None => {
-                                    debug!("NOT FOUND");
                                     new_notification(
                                         details,
                                         application.clone(),
@@ -102,7 +100,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         Message::Close(id) => {
-                            window_close(id, runtime_data.clone());
+                            if let Some(w) = runtime_data.borrow().windows.get(&id) {
+                                w.inner.close()
+                            }
+                            close_hook(id, Reason::Closed, iface.clone(), runtime_data.clone())
+                                .await;
                         }
                     }
                 }
@@ -112,10 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         load_css();
     });
 
-    application.connect_activate(|application| {
-        let w = gtk::Window::new();
-        w.set_application(Some(application));
-    });
+    application.connect_activate(build_ui);
 
     application.run();
 
@@ -128,7 +127,7 @@ fn new_notification(
     iface: Rc<IFaceRef>,
     runtime_data: RuntimeData,
 ) {
-    let window = window_build(
+    let window = Window::build(
         &details,
         application.clone(),
         iface.clone(),
@@ -164,7 +163,7 @@ fn new_notification(
         #[strong]
         runtime_data,
         move |id| async move {
-            close_hook(id, iface.clone(), runtime_data.clone()).await;
+            close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
         }
     ));
 
@@ -173,29 +172,31 @@ fn new_notification(
 
     // gesture_click.connect_pressed(move |_gesture, _n_press, _x, _y| {});
 
+    // TODO client can send us something like "default:Open"
     gesture_click.connect_released(clone!(
         #[strong]
         iface,
         #[strong]
         runtime_data,
-        move |_gesture, _n_press, _x, _y| {
-            window_close(details.id, runtime_data.clone());
-
+        #[strong]
+        window,
+        move |_, _, _, _| {
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
+                #[strong]
+                runtime_data,
+                #[strong]
+                window,
                 async move {
-                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
-                        .await
-                        .unwrap();
-
-                    IFace::notification_closed(
-                        iface.signal_context(),
+                    window.inner.close();
+                    close_hook(
                         details.id,
                         Reason::Dismissed,
+                        iface.clone(),
+                        runtime_data.clone(),
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 }
             ));
         }
@@ -230,63 +231,9 @@ fn new_notification(
                 #[strong]
                 runtime_data,
                 move |id| async move {
-                    close_hook(id, iface.clone(), runtime_data.clone()).await;
+                    close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
                 }
             ));
         }
     ));
-}
-
-fn init_layer_shell(window: &impl LayerShell) {
-    window.init_layer_shell();
-
-    window.set_anchor(Edge::Top, true);
-    window.set_anchor(Edge::Right, true);
-
-    window.set_margin(Edge::Right, 5);
-}
-
-fn window_build(
-    details: &Details,
-    application: gtk::Application,
-    iface: Rc<IFaceRef>,
-    runtime_data: RuntimeData,
-) -> Window {
-    let window = Window::from_details(details.clone(), iface.clone());
-
-    init_layer_shell(&window.inner);
-
-    window.inner.set_application(Some(&application));
-
-    runtime_data
-        .borrow_mut()
-        .windows
-        .insert(details.id, window.clone());
-
-    window
-}
-
-fn window_close(id: u32, runtime_data: RuntimeData) {
-    if let Some(window) = runtime_data.borrow_mut().windows.remove(&id) {
-        window.inner.close();
-    }
-
-    margins_update(runtime_data);
-}
-
-fn margins_update(runtime_data: RuntimeData) {
-    let runtime_data = runtime_data.borrow();
-    let windows = runtime_data.windows.iter();
-
-    let iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if NEW_ON_TOP {
-        Box::new(windows.rev())
-    } else {
-        Box::new(windows)
-    };
-
-    let mut indent = 5;
-    for (_, window) in iter {
-        window.inner.set_margin(Edge::Top, indent);
-        indent += window.inner.height() + 5;
-    }
 }

@@ -61,8 +61,13 @@ mod css {
     }
 }
 
-pub async fn close_hook(id: u32, iface: Rc<IFaceRef>, runtime_data: RuntimeData) {
-    IFace::notification_closed(iface.signal_context(), id, Reason::Expired)
+pub async fn close_hook(
+    id: u32,
+    died_from: Reason,
+    iface: Rc<IFaceRef>,
+    runtime_data: RuntimeData,
+) {
+    IFace::notification_closed(iface.signal_context(), id, died_from)
         .await
         .unwrap();
 

@@ -74,7 +74,7 @@ impl IFace {
             "action-icons",
             "actions",
             "body",
-            // "body-hyperlinks",
+            "body-hyperlinks",
             // "body-images",
             "body-markup",
             // "icon-multi",
