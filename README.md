@@ -22,7 +22,12 @@ cargo run --release
 
 ```bash
 # check what other notification daemon is running
+# example output
+# org.freedesktop.Notifications                          432884 DAEMONNAME            USERNAME :1.6094       user@1000.service -       -
 busctl --user list | grep org.freedesktop.Notifications
+
+# kill it
+killall DAEMONNAME
 ```
 
 </details>
