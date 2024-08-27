@@ -18,7 +18,7 @@ mod window {
         prelude::*,
         Align, Justification, Orientation,
     };
-    use notifications::Details;
+    use notifications::{Details, IFace, IFaceRef};
 
     use crate::DEFAULT_EXPIRE_TIMEOUT;
 
@@ -69,8 +69,9 @@ mod window {
         }
     }
 
-    impl From<Details> for Window {
-        fn from(value: Details) -> Self {
+    // From<Details> for
+    impl Window {
+        pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
             // let app_name = gtk::Label::builder()
             //     .label(value.app_name.unwrap_or_default())
             //     .visible(value.app_name.is_some())
@@ -99,6 +100,43 @@ mod window {
                 .use_markup(true)
                 .build();
 
+            let actions_box = gtk::Box::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(5)
+                .visible(false)
+                .build();
+            for action in value.actions {
+                actions_box.set_visible(true);
+                actions_box.append(&{
+                    let btn = gtk::Button::builder()
+                        .label(action.to_string())
+                        .hexpand(true)
+                        .build();
+
+                    btn.connect_clicked(clone!(
+                        #[strong]
+                        iface,
+                        #[strong]
+                        action,
+                        move |_| {
+                            glib::spawn_future_local(clone!(
+                                #[strong]
+                                iface,
+                                #[strong]
+                                action,
+                                async move {
+                                    IFace::action_invoked(iface.signal_context(), value.id, action)
+                                        .await
+                                        .unwrap();
+                                }
+                            ));
+                        }
+                    ));
+
+                    btn
+                });
+            }
+
             let main_box = gtk::Box::builder()
                 .orientation(Orientation::Vertical)
                 .spacing(5)
@@ -109,6 +147,7 @@ mod window {
                 .build();
             main_box.append(&summary);
             main_box.append(&body);
+            main_box.append(&actions_box);
 
             let inner = gtk::Window::builder()
                 // optimal size to display 40 chars in 12px font and 5px margin

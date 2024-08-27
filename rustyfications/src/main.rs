@@ -11,7 +11,7 @@ use gtk::{
 use gtk_layer_shell::{Edge, LayerShell};
 #[allow(unused_imports)]
 use log::*;
-use notifications::{Details, IFace, IFaceRef, Message, Reason, ServerInfo};
+use notifications::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use types::{RuntimeData, Window};
 use utils::{close_hook, load_css};
 
@@ -126,7 +126,12 @@ fn new_notification(
     iface: Rc<IFaceRef>,
     runtime_data: RuntimeData,
 ) {
-    let window = window_build(&details, application.clone(), runtime_data.clone());
+    let window = window_build(
+        &details,
+        application.clone(),
+        iface.clone(),
+        runtime_data.clone(),
+    );
 
     window.inner.present();
 
@@ -168,7 +173,7 @@ fn new_notification(
                 #[strong]
                 iface,
                 async move {
-                    IFace::action_invoked(iface.signal_context(), details.id, "default")
+                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
                         .await
                         .unwrap();
 
@@ -236,9 +241,10 @@ fn init_layer_shell(window: &impl LayerShell) {
 fn window_build(
     details: &Details,
     application: gtk::Application,
+    iface: Rc<IFaceRef>,
     runtime_data: RuntimeData,
 ) -> Window {
-    let window = Window::from(details.clone());
+    let window = Window::from_details(details.clone(), iface.clone());
 
     init_layer_shell(&window.inner);
 
@@ -269,7 +275,7 @@ fn margins_update(runtime_data: RuntimeData) {
     } else {
         Box::new(windows)
     };
-    : Box<dyn Iterator<Item = (&u32, &Window)>>
+
     let mut indent = 5;
     for (_, window) in iter {
         window.inner.set_margin(Edge::Top, indent);

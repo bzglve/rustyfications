@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap, time::Duration, vec};
 
+pub use action::Action;
 use futures::channel::mpsc::Sender;
 pub use id::Id;
 #[allow(unused_imports)]
@@ -46,6 +47,57 @@ mod id {
     }
 }
 
+mod action {
+    use zbus::zvariant::Type;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Action {
+        key: String,
+        text: String,
+    }
+
+    impl Action {
+        pub fn new(key: &str, text: &str) -> Self {
+            Self {
+                key: key.to_owned(),
+                text: text.to_owned(),
+            }
+        }
+    }
+
+    // TODO need to be sure that this is like that
+    impl Default for Action {
+        fn default() -> Self {
+            Self {
+                key: "default".to_owned(),
+                text: "Default".to_owned(),
+            }
+        }
+    }
+
+    #[allow(clippy::to_string_trait_impl)]
+    impl ToString for Action {
+        fn to_string(&self) -> String {
+            self.text.clone()
+        }
+    }
+
+    impl serde::Serialize for Action {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serializer.serialize_str(&self.key)
+        }
+    }
+
+    impl Type for Action {
+        fn signature() -> zbus::zvariant::Signature<'static> {
+            zbus::zvariant::Signature::from_str_unchecked("s")
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Details {
     pub id: u32,
@@ -53,7 +105,7 @@ pub struct Details {
     pub app_icon: Option<String>,
     pub summary: String,
     pub body: Option<String>,
-    // pub actions: Vec<Action>,  // TODO
+    pub actions: Vec<Action>,
     // pub hints: Vec<Hint>, // TODO
     pub expire_timeout: Option<Duration>,
 }
@@ -123,7 +175,7 @@ impl IFace {
     fn get_capabilities(&self) -> Vec<&str> {
         vec![
             // "action-icons",
-            // "actions",
+            "actions",
             "body",
             // "body-hyperlinks",
             // "body-images",
@@ -143,7 +195,7 @@ impl IFace {
         app_icon: &str,
         summary: &str,
         body: &str,
-        _actions: Vec<&str>,
+        actions: Vec<&str>,
         _hints: HashMap<&str, Value>,
         expire_timeout: i32,
     ) -> u32 {
@@ -171,6 +223,10 @@ impl IFace {
             } else {
                 Some(body.to_owned())
             },
+            actions: actions
+                .chunks_exact(2)
+                .map(|t| Action::new(t[0], t[1]))
+                .collect(),
             expire_timeout: match expire_timeout.cmp(&0) {
                 Ordering::Less => None,
                 Ordering::Equal => Some(Duration::MAX),
@@ -217,7 +273,7 @@ impl IFace {
     pub async fn action_invoked(
         ctxt: &SignalContext<'_>,
         id: u32,
-        action_key: &str,
+        action_key: Action,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
