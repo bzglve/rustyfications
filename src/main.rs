@@ -1,5 +1,6 @@
 mod types;
 mod utils;
+mod dbus;
 
 use std::{error::Error, rc::Rc, sync::Arc, time::Duration};
 
@@ -11,7 +12,7 @@ use gtk::{
 use gtk_layer_shell::{Edge, LayerShell};
 #[allow(unused_imports)]
 use log::*;
-use notifications::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
+use dbus::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use types::{RuntimeData, Window};
 use utils::{close_hook, load_css};
 
@@ -157,6 +158,16 @@ fn new_notification(
         );
     }
 
+    window.start_timeout(clone!(
+        #[strong]
+        iface,
+        #[strong]
+        runtime_data,
+        move |id| async move {
+            close_hook(id, iface.clone(), runtime_data.clone()).await;
+        }
+    ));
+
     let gesture_click = gtk::GestureClick::new();
     window.inner.add_controller(gesture_click.clone());
 
@@ -224,10 +235,6 @@ fn new_notification(
             ));
         }
     ));
-
-    window.start_timeout(move |id| async move {
-        close_hook(id, iface.clone(), runtime_data.clone()).await;
-    });
 }
 
 fn init_layer_shell(window: &impl LayerShell) {

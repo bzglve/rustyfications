@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 pub use css::load_css;
-use notifications::{IFace, IFaceRef, Reason};
+use dbus::{IFace, IFaceRef, Reason};
 
-use crate::{margins_update, types::RuntimeData};
+use crate::{dbus, margins_update, types::RuntimeData};
 
 mod css {
     use std::collections::HashMap;

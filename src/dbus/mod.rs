@@ -53,6 +53,7 @@ pub enum Reason {
     /// The notification was closed by a call to [CloseNotification](NotificationsIFace::close_notification())
     Closed = 3,
     /// Undefined/reserved reasons
+    #[allow(dead_code)]
     Undefined = 4,
 }
 

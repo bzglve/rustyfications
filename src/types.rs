@@ -18,9 +18,9 @@ mod window {
         prelude::*,
         Align, Justification, Orientation,
     };
-    use notifications::{Details, IFace, IFaceRef};
+    use dbus::{Details, IFace, IFaceRef};
 
-    use crate::DEFAULT_EXPIRE_TIMEOUT;
+    use crate::{dbus, DEFAULT_EXPIRE_TIMEOUT};
 
     #[derive(Clone)]
     pub struct Window {
@@ -81,18 +81,18 @@ mod window {
             //     .build();
             // let app_icon = gtk::Image::builder().visible(false).build();
             let summary = gtk::Label::builder()
-                .label(value.summary)
+                .label(format!("<b>{}</b>", value.summary))
                 .name("summary")
                 .justify(Justification::Left)
                 .halign(Align::Start)
                 .ellipsize(EllipsizeMode::End)
+                .use_markup(true)
                 .build();
 
             let body = gtk::Label::builder()
                 .label(value.body.clone().unwrap_or_default())
                 .visible(value.body.is_some())
                 .name("body")
-                .sensitive(false)
                 .justify(Justification::Left)
                 .valign(Align::Start)
                 .halign(Align::Start)
