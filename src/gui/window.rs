@@ -108,7 +108,7 @@ impl Window {
             actions_box.set_visible(true);
             actions_box.append(&{
                 let btn = gtk::Button::builder().hexpand(true).build();
-                if !action.icon {
+                if !value.hints.action_icons {
                     btn.set_label(&action.to_string());
                 } else {
                     // btn.set_icon_name(&lookup_icon(&action.to_string()));
@@ -184,7 +184,7 @@ impl Window {
             actions_box.set_visible(true);
             actions_box.append(&{
                 let btn = gtk::Button::builder().hexpand(true).build();
-                if !action.icon {
+                if !value.hints.action_icons {
                     btn.set_label(&action.text);
                 } else {
                     btn.set_icon_name(&action.key);

@@ -4,26 +4,22 @@ use zbus::zvariant::Type;
 pub struct Action {
     pub key: String,
     pub text: String,
-    pub icon: bool,
 }
 
 impl Action {
-    pub fn new(key: &str, text: &str, icon: bool) -> Self {
+    pub fn new(key: &str, text: &str) -> Self {
         Self {
             key: key.to_owned(),
             text: text.to_owned(),
-            icon,
         }
     }
 }
 
-// TODO need to be sure that this is like that
 impl Default for Action {
     fn default() -> Self {
         Self {
             key: "default".to_owned(),
             text: "Default".to_owned(),
-            icon: false,
         }
     }
 }

@@ -125,7 +125,7 @@ impl IFace {
             },
             actions: actions
                 .chunks_exact(2)
-                .map(|t| Action::new(t[0], t[1], hints.action_icons))
+                .map(|t| Action::new(t[0], t[1]))
                 .collect(),
             hints,
             expire_timeout: match expire_timeout.cmp(&0) {
