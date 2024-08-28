@@ -77,7 +77,7 @@ impl Window {
     ) -> Self {
         let window = Window::from_details(details.clone(), iface.clone());
 
-        // init_layer_shell(&window.inner);
+        init_layer_shell(&window.inner);
 
         window.inner.set_application(Some(&application));
 
