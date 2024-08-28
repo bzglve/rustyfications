@@ -31,7 +31,7 @@ pub struct Details {
     pub summary: String,
     pub body: Option<String>,
     pub actions: Vec<Action>,
-    // pub hints: Vec<>,
+    pub hints: Hints,
     pub expire_timeout: Option<Duration>,
 }
 
@@ -78,7 +78,7 @@ impl IFace {
             // "body-images",
             "body-markup",
             // "icon-multi",
-            // "icon-static",
+            "icon-static",
             // "persistence",
             // "sound",
         ]
@@ -102,8 +102,8 @@ impl IFace {
             Id::bump_glob()
         };
 
+        trace!("raw hints keys: {:?}", hints.keys());
         let hints: Hints = Hints::from(hints);
-        debug!("hints: {:?}", hints);
 
         let details = Details {
             id: notification_id,
@@ -127,6 +127,7 @@ impl IFace {
                 .chunks_exact(2)
                 .map(|t| Action::new(t[0], t[1], hints.action_icons))
                 .collect(),
+            hints,
             expire_timeout: match expire_timeout.cmp(&0) {
                 Ordering::Less => None,
                 Ordering::Equal => Some(Duration::MAX),

@@ -2,8 +2,8 @@ use zbus::zvariant::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Action {
-    key: String,
-    text: String,
+    pub key: String,
+    pub text: String,
     pub icon: bool,
 }
 

@@ -1,7 +1,8 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
 use dbus::{Details, IFace, IFaceRef};
 use gtk::{
+    gdk_pixbuf::Pixbuf,
     glib::{self, clone, JoinHandle},
     pango::{self, EllipsizeMode},
     prelude::*,
@@ -15,8 +16,8 @@ use super::utils::init_layer_shell;
 #[derive(Clone)]
 pub struct Window {
     id: u32,
-    // app_name: gtk::Label,
-    // app_icon: gtk::Image, // TODO maybe search for icon type
+    _app_name: gtk::Label,
+    _icon: gtk::Image,
     summary: gtk::Label,
     body: gtk::Label,
     actions_box: gtk::Box,
@@ -89,6 +90,8 @@ impl Window {
 
         let value = value.clone();
 
+        // TODO icon, app_name and image update
+
         self.summary.set_label(&value.summary);
 
         self.body.set_label(&value.body.clone().unwrap_or_default());
@@ -141,13 +144,16 @@ impl Window {
     }
 
     pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
-        // let app_name = gtk::Label::builder()
-        //     .label(value.app_name.unwrap_or_default())
-        //     .visible(value.app_name.is_some())
-        //     .name("app_name")
-        //     .sensitive(false)
-        //     .build();
-        // let app_icon = gtk::Image::builder().visible(false).build();
+        let app_name = gtk::Label::builder()
+            .label(value.app_name.clone().unwrap_or_default())
+            .visible(value.app_name.is_some())
+            .name("app_name")
+            .justify(Justification::Left)
+            .halign(Align::Start)
+            .ellipsize(EllipsizeMode::End)
+            .sensitive(false)
+            .build();
+
         let summary = gtk::Label::builder()
             .label(format!("<b>{}</b>", value.summary))
             .name("summary")
@@ -179,11 +185,10 @@ impl Window {
             actions_box.append(&{
                 let btn = gtk::Button::builder().hexpand(true).build();
                 if !action.icon {
-                    btn.set_label(&action.to_string());
+                    btn.set_label(&action.text);
                 } else {
-                    // btn.set_icon_name(&lookup_icon(&action.to_string()));
-                    btn.set_icon_name(&action.to_string());
-                    btn.set_tooltip_text(Some(&action.to_string()));
+                    btn.set_icon_name(&action.key);
+                    btn.set_tooltip_text(Some(&action.text));
                 }
 
                 btn.connect_clicked(clone!(
@@ -213,14 +218,57 @@ impl Window {
         let main_box = gtk::Box::builder()
             .orientation(Orientation::Vertical)
             .spacing(5)
+            .build();
+        main_box.append(&app_name);
+        main_box.append(&summary);
+        main_box.append(&body);
+
+        let outer_box = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(5)
+            .build();
+        let icon = gtk::Image::builder()
+            .visible(false)
+            .pixel_size(64)
+            .valign(Align::Start)
+            .halign(Align::Start)
+            .build();
+        let mut pixbuf: Option<Pixbuf> = None;
+        if let Some(image_data) = value.hints.image_data {
+            pixbuf = Some(Pixbuf::from(image_data));
+        } else if let Some(image_path) = value.hints.image_path {
+            if PathBuf::from(image_path.clone()).is_absolute() {
+                pixbuf = Pixbuf::from_file(image_path).ok();
+            } else {
+                icon.set_icon_name(Some(&image_path));
+            }
+        } else if let Some(icon_src) = value.app_icon {
+            if PathBuf::from(icon_src.clone()).is_absolute() {
+                pixbuf = Pixbuf::from_file(icon_src).ok();
+            } else {
+                icon.set_icon_name(Some(&icon_src));
+            }
+        } else if let Some(icon_data) = value.hints.icon_data {
+            pixbuf = Some(Pixbuf::from(icon_data));
+        }
+        if icon.icon_name().is_none() {
+            icon.set_from_pixbuf(pixbuf.as_ref());
+            icon.set_visible(pixbuf.is_some());
+        }
+
+        outer_box.append(&icon);
+        outer_box.append(&main_box);
+
+        let act_out_box = gtk::Box::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(5)
             .margin_top(5)
             .margin_start(5)
             .margin_bottom(5)
             .margin_end(5)
             .build();
-        main_box.append(&summary);
-        main_box.append(&body);
-        main_box.append(&actions_box);
+        act_out_box.append(&outer_box);
+        act_out_box.append(&actions_box);
 
         let inner = gtk::Window::builder()
             // optimal size to display 40 chars in 12px font and 5px margin
@@ -228,10 +276,12 @@ impl Window {
             .default_height(30)
             .name("notification")
             .build();
-        inner.set_child(Some(&main_box));
+        inner.set_child(Some(&act_out_box));
 
         Self {
             id: value.id,
+            _app_name: app_name,
+            _icon: icon,
             summary,
             body,
             actions_box,
