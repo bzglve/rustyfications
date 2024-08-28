@@ -5,7 +5,7 @@ mod utils;
 
 use std::{error::Error, rc::Rc, sync::Arc, time::Duration};
 
-use dbus::{Details, IFace, IFaceRef, Message, Reason, ServerInfo};
+use dbus::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
     glib::{self, clone},
@@ -172,7 +172,8 @@ fn new_notification(
 
     // gesture_click.connect_pressed(move |_gesture, _n_press, _x, _y| {});
 
-    // TODO client can send us something like "default:Open"
+    // TODO we need something more predictable
+    // currently only tooltip indicates what will be on click
     gesture_click.connect_released(clone!(
         #[strong]
         iface,
@@ -189,6 +190,10 @@ fn new_notification(
                 #[strong]
                 window,
                 async move {
+                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
+                        .await
+                        .unwrap();
+
                     window.inner.close();
                     close_hook(
                         details.id,
@@ -205,6 +210,8 @@ fn new_notification(
     let event_controller_motion = gtk::EventControllerMotion::new();
     window.inner.add_controller(event_controller_motion.clone());
 
+    // FIXME new window breaks focus
+    // it invokes leave and notification can be lost while we are holding it
     event_controller_motion.connect_enter(clone!(
         #[strong]
         window,

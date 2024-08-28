@@ -1,6 +1,5 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
-use dbus::{Details, IFace, IFaceRef};
 use gtk::{
     gdk_pixbuf::Pixbuf,
     glib::{self, clone, JoinHandle},
@@ -9,7 +8,11 @@ use gtk::{
     Align, Justification, Orientation,
 };
 
-use crate::{dbus, types::RuntimeData, DEFAULT_EXPIRE_TIMEOUT};
+use crate::{
+    dbus::{Details, IFace, IFaceRef},
+    types::RuntimeData,
+    DEFAULT_EXPIRE_TIMEOUT,
+};
 
 use super::utils::init_layer_shell;
 
@@ -180,7 +183,14 @@ impl Window {
             .spacing(5)
             .visible(false)
             .build();
-        for action in value.actions {
+
+        let default_action = value
+            .actions
+            .iter()
+            .find(|a| a.key == "default")
+            .cloned()
+            .unwrap_or_default();
+        for action in value.actions.iter().filter(|a| a.key != "default") {
             actions_box.set_visible(true);
             actions_box.append(&{
                 let btn = gtk::Button::builder().hexpand(true).build();
@@ -188,8 +198,8 @@ impl Window {
                     btn.set_label(&action.text);
                 } else {
                     btn.set_icon_name(&action.key);
-                    btn.set_tooltip_text(Some(&action.text));
                 }
+                btn.set_tooltip_text(Some(&action.text));
 
                 btn.connect_clicked(clone!(
                     #[strong]
@@ -275,6 +285,7 @@ impl Window {
             .default_width(410)
             .default_height(30)
             .name("notification")
+            .tooltip_text(default_action.text)
             .build();
         inner.set_child(Some(&act_out_box));
 

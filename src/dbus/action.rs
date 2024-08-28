@@ -19,7 +19,7 @@ impl Default for Action {
     fn default() -> Self {
         Self {
             key: "default".to_owned(),
-            text: "Default".to_owned(),
+            text: "Close".to_owned(),
         }
     }
 }
