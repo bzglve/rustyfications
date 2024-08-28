@@ -5,7 +5,9 @@ Rusty notification daemon for Wayland.
 ---
 ![screenshot](assets/screenshot.png)
 
-![screenshot-icons-hyprlink](assets/screenshot-icons-hyprlink.png)
+![screenshot-icons-hyprlink](assets/penguin.png)
+
+![rickroll](assets/rickroll.png)
 
 `Rust` | `Gtk4` | `gtk4-layer-shell`
 
@@ -33,3 +35,23 @@ killall DAEMONNAME
 ```
 
 </details>
+
+### Automation
+
+You can create a file `/usr/share/dbus-1/services/com.bzglve.rustyfications.service`
+
+put the following in it
+
+```conf
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=/usr/bin/rustyfications
+```
+
+and of course copy binary to bin directory
+
+```bash
+sudo cp target/release/rustyfications /usr/bin/rustyfications
+```
+
+From now you don't need to manually start daemon. It will be activated automatically on any client request

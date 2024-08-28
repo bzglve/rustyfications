@@ -167,14 +167,31 @@ fn new_notification(
         }
     ));
 
-    let gesture_click = gtk::GestureClick::new();
-    window.inner.add_controller(gesture_click.clone());
+    // lmb
+    let gesture_click_1 = gtk::GestureClick::builder().button(1).build();
+    window.inner.add_controller(gesture_click_1.clone());
 
-    // gesture_click.connect_pressed(move |_gesture, _n_press, _x, _y| {});
+    gesture_click_1.connect_released(clone!(
+        #[strong]
+        iface,
+        move |_, _, _, _| {
+            glib::spawn_future_local(clone!(
+                #[strong]
+                iface,
+                async move {
+                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
+                        .await
+                        .unwrap();
+                }
+            ));
+        }
+    ));
 
-    // TODO we need something more predictable
-    // currently only tooltip indicates what will be on click
-    gesture_click.connect_released(clone!(
+    // mmb
+    let gesture_click_2 = gtk::GestureClick::builder().button(2).build();
+    window.inner.add_controller(gesture_click_2.clone());
+
+    gesture_click_2.connect_released(clone!(
         #[strong]
         iface,
         #[strong]
@@ -194,6 +211,39 @@ fn new_notification(
                         .await
                         .unwrap();
 
+                    window.inner.close();
+                    close_hook(
+                        details.id,
+                        Reason::Dismissed,
+                        iface.clone(),
+                        runtime_data.clone(),
+                    )
+                    .await;
+                }
+            ));
+        }
+    ));
+
+    // rmb
+    let gesture_click_3 = gtk::GestureClick::builder().button(3).build();
+    window.inner.add_controller(gesture_click_3.clone());
+
+    gesture_click_3.connect_released(clone!(
+        #[strong]
+        iface,
+        #[strong]
+        runtime_data,
+        #[strong]
+        window,
+        move |_, _, _, _| {
+            glib::spawn_future_local(clone!(
+                #[strong]
+                iface,
+                #[strong]
+                runtime_data,
+                #[strong]
+                window,
+                async move {
                     window.inner.close();
                     close_hook(
                         details.id,

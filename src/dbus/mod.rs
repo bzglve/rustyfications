@@ -117,7 +117,7 @@ impl IFace {
             } else {
                 Some(app_icon.to_owned())
             },
-            summary: summary.to_owned(),
+            summary: format!("<b>{}</b>", summary), // TODO if markup feature is enabled
             body: if body.is_empty() {
                 None
             } else {
