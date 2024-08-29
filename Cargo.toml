@@ -1,14 +1,20 @@
 [package]
 name = "rustyfications"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 
 [dependencies]
-env_logger = "0.11"
-futures = "0.3"
+# gui
 gtk = { version = "0.9", package = "gtk4" }
 gtk-layer-shell = { version = "0.4", package = "gtk4-layer-shell" }
+
+# logging
 log = "0.4"
+env_logger = "0.11"
+sys_logger = { version = "2.1", package = "systemd-journal-logger" }
+
+# common
+futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3", features = ["local-offset"] }
 zbus = "4.4"

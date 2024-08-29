@@ -1,23 +1,20 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use gtk::{
-    gdk,
     gdk_pixbuf::Pixbuf,
     glib::{self, clone, JoinHandle},
     pango::{self, EllipsizeMode},
     prelude::*,
-    Align, IconLookupFlags, IconTheme, Justification, Orientation, TextDirection,
+    Align, Justification, Orientation,
 };
 
 use crate::{
     dbus::{Details, IFace, IFaceRef},
     types::RuntimeData,
-    DEFAULT_EXPIRE_TIMEOUT,
+    DEFAULT_EXPIRE_TIMEOUT, ICON_SIZE,
 };
 
-use super::utils::init_layer_shell;
-
-static ICON_SIZE: i32 = 72; // TODO move to config
+use super::utils::{init_layer_shell, pixbuf};
 
 #[derive(Clone)]
 pub struct Window {
@@ -89,7 +86,6 @@ impl Window {
         window
     }
 
-    // TODO DRY from_details
     pub fn update_from_details(&mut self, value: &Details, iface: Rc<IFaceRef>) {
         if self.thandle.borrow().is_some() {
             self.stop_timeout();
@@ -108,12 +104,7 @@ impl Window {
 
         let actions_box = self.actions_box.clone();
 
-        let default_action = value
-            .actions
-            .iter()
-            .find(|a| a.key == "default")
-            .cloned()
-            .unwrap_or_default();
+        let default_action = value.actions.iter().find(|a| a.key == "default").cloned();
         actions_box
             .observe_children()
             .into_iter()
@@ -160,77 +151,27 @@ impl Window {
         if let Some(image_data) = value.hints.image_data {
             pixbuf = Some(Pixbuf::from(image_data));
         } else if let Some(image_path) = value.hints.image_path {
-            if PathBuf::from(image_path.clone()).is_absolute() {
-                pixbuf = Pixbuf::from_file(image_path).ok();
-            } else {
-                let itheme = IconTheme::for_display(&gdk::Display::default().unwrap());
-                if itheme.has_icon(&image_path) {
-                    let ipaint = itheme.lookup_icon(
-                        &image_path,
-                        &["image-missing"],
-                        ICON_SIZE,
-                        1,
-                        TextDirection::None,
-                        IconLookupFlags::empty(),
-                    );
-                    let image_path = ipaint
-                        .file()
-                        .unwrap()
-                        .path()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string();
-                    pixbuf = Pixbuf::from_file(image_path).ok();
-                }
-            }
+            pixbuf = pixbuf::new_from_str(&image_path);
         } else if let Some(icon_src) = value.app_icon {
-            if PathBuf::from(icon_src.clone()).is_absolute() {
-                pixbuf = Pixbuf::from_file(icon_src).ok();
-            } else {
-                let itheme = IconTheme::for_display(&gdk::Display::default().unwrap());
-                if itheme.has_icon(&icon_src) {
-                    let ipaint = itheme.lookup_icon(
-                        &icon_src,
-                        &["image-missing"],
-                        ICON_SIZE,
-                        1,
-                        TextDirection::None,
-                        IconLookupFlags::empty(),
-                    );
-                    let icon_src = ipaint
-                        .file()
-                        .unwrap()
-                        .path()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string();
-                    pixbuf = Pixbuf::from_file(icon_src).ok();
-                }
-            }
+            pixbuf = pixbuf::new_from_str(&icon_src);
         } else if let Some(icon_data) = value.hints.icon_data {
             pixbuf = Some(Pixbuf::from(icon_data));
         }
         if let Some(pixbuf) = pixbuf {
-            let height = pixbuf.height();
-            let width = pixbuf.width();
-            let side = height.min(width);
-
-            let pixbuf = pixbuf.new_subpixbuf((width - side) / 2, (height - side) / 2, side, side);
-
+            let pixbuf = pixbuf::crop_square(&pixbuf);
             self.icon.set_from_pixbuf(Some(&pixbuf));
             self.icon.set_visible(true);
         }
 
-        self.inner.set_tooltip_text(Some(&default_action.text));
+        if let Some(default_action) = default_action {
+            self.inner.set_tooltip_text(Some(&default_action.text));
+        }
 
         self.expire_timeout = value.expire_timeout.unwrap_or(DEFAULT_EXPIRE_TIMEOUT);
     }
 
-    // TODO DRY update_from_details
-    pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
+    fn build_widgets_tree(value: &Details) -> Self {
         let app_name = gtk::Label::builder()
-            .label(value.app_name.clone().unwrap_or_default())
-            .visible(value.app_name.is_some())
             .name("app_name")
             .justify(Justification::Left)
             .halign(Align::Start)
@@ -239,7 +180,6 @@ impl Window {
             .build();
 
         let summary = gtk::Label::builder()
-            .label(value.summary)
             .name("summary")
             .justify(Justification::Left)
             .halign(Align::Start)
@@ -248,8 +188,6 @@ impl Window {
             .build();
 
         let body = gtk::Label::builder()
-            .label(value.body.clone().unwrap_or_default())
-            .visible(value.body.is_some())
             .name("body")
             .justify(Justification::Left)
             .valign(Align::Fill)
@@ -262,49 +200,7 @@ impl Window {
         let actions_box = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
             .spacing(5)
-            .visible(false)
             .build();
-
-        let default_action = value
-            .actions
-            .iter()
-            .find(|a| a.key == "default")
-            .cloned()
-            .unwrap_or_default();
-        for action in value.actions.iter().filter(|a| a.key != "default") {
-            actions_box.set_visible(true);
-            actions_box.append(&{
-                let btn = gtk::Button::builder().hexpand(true).build();
-                if !value.hints.action_icons {
-                    btn.set_label(&action.text);
-                } else {
-                    btn.set_icon_name(&action.key);
-                }
-                btn.set_tooltip_text(Some(&action.text));
-
-                btn.connect_clicked(clone!(
-                    #[strong]
-                    iface,
-                    #[strong]
-                    action,
-                    move |_| {
-                        glib::spawn_future_local(clone!(
-                            #[strong]
-                            iface,
-                            #[strong]
-                            action,
-                            async move {
-                                IFace::action_invoked(iface.signal_context(), value.id, action)
-                                    .await
-                                    .unwrap();
-                            }
-                        ));
-                    }
-                ));
-
-                btn
-            });
-        }
 
         let main_box = gtk::Box::builder()
             .orientation(Orientation::Vertical)
@@ -324,70 +220,6 @@ impl Window {
             .valign(Align::Center)
             .halign(Align::End)
             .build();
-        let mut pixbuf: Option<Pixbuf> = None;
-        if let Some(image_data) = value.hints.image_data {
-            pixbuf = Some(Pixbuf::from(image_data));
-        } else if let Some(image_path) = value.hints.image_path {
-            if PathBuf::from(image_path.clone()).is_absolute() {
-                pixbuf = Pixbuf::from_file(image_path).ok();
-            } else {
-                let itheme = IconTheme::for_display(&gdk::Display::default().unwrap());
-                if itheme.has_icon(&image_path) {
-                    let ipaint = itheme.lookup_icon(
-                        &image_path,
-                        &["image-missing"],
-                        ICON_SIZE,
-                        1,
-                        TextDirection::None,
-                        IconLookupFlags::empty(),
-                    );
-                    let image_path = ipaint
-                        .file()
-                        .unwrap()
-                        .path()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string();
-                    pixbuf = Pixbuf::from_file(image_path).ok();
-                }
-            }
-        } else if let Some(icon_src) = value.app_icon {
-            if PathBuf::from(icon_src.clone()).is_absolute() {
-                pixbuf = Pixbuf::from_file(icon_src).ok();
-            } else {
-                let itheme = IconTheme::for_display(&gdk::Display::default().unwrap());
-                if itheme.has_icon(&icon_src) {
-                    let ipaint = itheme.lookup_icon(
-                        &icon_src,
-                        &["image-missing"],
-                        ICON_SIZE,
-                        1,
-                        TextDirection::None,
-                        IconLookupFlags::empty(),
-                    );
-                    let icon_src = ipaint
-                        .file()
-                        .unwrap()
-                        .path()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string();
-                    pixbuf = Pixbuf::from_file(icon_src).ok();
-                }
-            }
-        } else if let Some(icon_data) = value.hints.icon_data {
-            pixbuf = Some(Pixbuf::from(icon_data));
-        }
-        if let Some(pixbuf) = pixbuf {
-            let height = pixbuf.height();
-            let width = pixbuf.width();
-            let side = height.min(width);
-
-            let pixbuf = pixbuf.new_subpixbuf((width - side) / 2, (height - side) / 2, side, side);
-
-            icon.set_from_pixbuf(Some(&pixbuf));
-            icon.set_visible(true);
-        }
 
         outer_box.append(&icon);
         outer_box.append(&main_box);
@@ -408,7 +240,6 @@ impl Window {
             .default_width(410)
             .default_height(30)
             .name("notification")
-            .tooltip_text(default_action.text)
             .build();
         inner.set_child(Some(&act_out_box));
 
@@ -423,5 +254,11 @@ impl Window {
             thandle: Default::default(),
             inner,
         }
+    }
+
+    pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
+        let mut _self = Self::build_widgets_tree(&value);
+        _self.update_from_details(&value, iface);
+        _self
     }
 }

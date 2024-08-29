@@ -1,3 +1,5 @@
+#![deny(warnings, clippy::all)]
+
 mod dbus;
 mod gui;
 mod types;
@@ -14,16 +16,29 @@ use gtk::{
 use gui::{build_ui, utils::margins_update, window::Window};
 #[allow(unused_imports)]
 use log::*;
+use sys_logger::{connected_to_journal, JournalLog};
 use types::RuntimeData;
 use utils::{close_hook, load_css};
 
 pub static MAIN_APP_ID: &str = "com.bzglve.rustyfications";
 
+// TODO move to config
 pub static DEFAULT_EXPIRE_TIMEOUT: Duration = Duration::from_secs(5);
 pub static NEW_ON_TOP: bool = true;
+pub static ICON_SIZE: i32 = 72;
+pub static LOG_LEVEL: LevelFilter = LevelFilter::Trace;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    if connected_to_journal() {
+        JournalLog::new()
+            .unwrap()
+            .with_extra_fields(vec![("VERSION", env!("CARGO_PKG_VERSION"))])
+            .install()
+            .unwrap();
+    } else {
+        env_logger::init();
+    }
+    log::set_max_level(LOG_LEVEL);
 
     let runtime_data = RuntimeData::default();
 
