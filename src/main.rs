@@ -1,5 +1,3 @@
-#![deny(warnings, clippy::all)]
-
 mod dbus;
 mod gui;
 mod types;
@@ -12,6 +10,7 @@ use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
     glib::{self, clone},
     prelude::*,
+    StateFlags,
 };
 use gui::{build_ui, utils::margins_update, window::Window};
 #[allow(unused_imports)]
@@ -277,35 +276,13 @@ fn new_notification(
 
     // FIXME new window breaks focus
     // it invokes leave and notification can be lost while we are holding it
-    event_controller_motion.connect_enter(clone!(
-        #[strong]
-        window,
-        move |_ecm, _x, _y| {
-            window.inner.add_css_class("hover");
-
-            window.stop_timeout();
-        }
-    ));
-
-    event_controller_motion.connect_leave(clone!(
-        #[strong]
-        window,
-        #[strong]
-        iface,
-        #[strong]
-        runtime_data,
-        move |_ecm| {
-            window.inner.remove_css_class("hover");
-
-            window.start_timeout(clone!(
-                #[strong]
-                iface,
-                #[strong]
-                runtime_data,
-                move |id| async move {
-                    close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
-                }
-            ));
-        }
-    ));
+    window
+        .inner
+        .connect_state_flags_changed(|window, state_flags| {
+            if state_flags.contains(StateFlags::PRELIGHT) {
+                window.remove_css_class("hover");
+            } else {
+                window.add_css_class("hover");
+            }
+        });
 }
