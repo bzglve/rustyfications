@@ -10,7 +10,6 @@ use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
     glib::{self, clone},
     prelude::*,
-    StateFlags,
 };
 use gui::{build_ui, utils::margins_update, window::Window};
 #[allow(unused_imports)]
@@ -27,6 +26,8 @@ pub static NEW_ON_TOP: bool = true;
 pub static ICON_SIZE: i32 = 72;
 pub static LOG_LEVEL: LevelFilter = LevelFilter::Trace;
 
+pub static WINDOW_CLOSE_ICON: &str = "window-close";
+
 fn main() -> Result<(), Box<dyn Error>> {
     if connected_to_journal() {
         JournalLog::new()
@@ -38,6 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         env_logger::init();
     }
     log::set_max_level(LOG_LEVEL);
+
+    info!("Starting application...");
 
     let runtime_data = RuntimeData::default();
 
@@ -56,6 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     application.connect_startup(move |application| {
+        info!("Application startup initiated.");
         let settings = gtk::Settings::default().unwrap();
         settings.connect_gtk_theme_name_notify(|_| load_css());
         settings.connect_gtk_application_prefer_dark_theme_notify(|_| load_css());
@@ -72,19 +76,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             async move {
                 loop {
                     let input = receiver.lock().await.select_next_some().await;
-                    debug!("{:?}", input);
+                    debug!("Received input: {:?}", input);
 
                     match input {
-                        Message::New(details) => new_notification(
-                            details,
-                            application.clone(),
-                            iface.clone(),
-                            runtime_data.clone(),
-                        ),
+                        Message::New(details) => {
+                            info!("New notification");
+                            new_notification(
+                                details,
+                                application.clone(),
+                                iface.clone(),
+                                runtime_data.clone(),
+                            );
+                        }
                         Message::Replace(details) => {
+                            debug!("Replacing notification");
                             let mut windows = runtime_data.borrow().windows.clone();
                             match windows.get_mut(&details.id) {
                                 Some(window) => {
+                                    info!(
+                                        "Updating existing notification window with id: {}",
+                                        details.id
+                                    );
                                     window.update_from_details(&details, iface.clone());
 
                                     window.start_timeout(clone!(
@@ -104,6 +116,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     ));
                                 }
                                 None => {
+                                    warn!(
+                                        "Notification to replace not found, creating new: {:?}",
+                                        details
+                                    );
                                     new_notification(
                                         details,
                                         application.clone(),
@@ -114,6 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         Message::Close(id) => {
+                            info!("Closing notification with id: {}", id);
                             if let Some(w) = runtime_data.borrow().windows.get(&id) {
                                 w.inner.close()
                             }
@@ -132,6 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     application.run();
 
+    info!("Application terminated.");
     Ok(())
 }
 
@@ -141,6 +159,8 @@ fn new_notification(
     iface: Rc<IFaceRef>,
     runtime_data: RuntimeData,
 ) {
+    info!("Creating new notification window for id: {}", details.id);
+
     let window = Window::build(
         &details,
         application.clone(),
@@ -181,14 +201,20 @@ fn new_notification(
         }
     ));
 
+    debug!("Setting up gesture controls for window.");
+
     // lmb
-    let gesture_click_1 = gtk::GestureClick::builder().button(1).build();
+    let gesture_click_1 = gtk::GestureClick::builder()
+        .button(1)
+        .exclusive(true)
+        .build();
     window.inner.add_controller(gesture_click_1.clone());
 
     gesture_click_1.connect_released(clone!(
         #[strong]
         iface,
-        move |_, _, _, _| {
+        move |gesture, _, _, _| {
+            debug!("Left mouse button released.");
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
@@ -198,6 +224,8 @@ fn new_notification(
                         .unwrap();
                 }
             ));
+
+            gesture.set_state(gtk::EventSequenceState::Claimed);
         }
     ));
 
@@ -212,7 +240,8 @@ fn new_notification(
         runtime_data,
         #[strong]
         window,
-        move |_, _, _, _| {
+        move |gesture, _, _, _| {
+            debug!("Middle mouse button released.");
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
@@ -235,6 +264,8 @@ fn new_notification(
                     .await;
                 }
             ));
+
+            gesture.set_state(gtk::EventSequenceState::Claimed);
         }
     ));
 
@@ -249,7 +280,8 @@ fn new_notification(
         runtime_data,
         #[strong]
         window,
-        move |_, _, _, _| {
+        move |gesture, _, _, _| {
+            debug!("Right mouse button released.");
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
@@ -268,6 +300,8 @@ fn new_notification(
                     .await;
                 }
             ));
+
+            gesture.set_state(gtk::EventSequenceState::Claimed);
         }
     ));
 
@@ -275,14 +309,32 @@ fn new_notification(
     window.inner.add_controller(event_controller_motion.clone());
 
     // FIXME new window breaks focus
-    // it invokes leave and notification can be lost while we are holding it
-    window
-        .inner
-        .connect_state_flags_changed(|window, state_flags| {
-            if state_flags.contains(StateFlags::PRELIGHT) {
-                window.remove_css_class("hover");
-            } else {
-                window.add_css_class("hover");
-            }
-        });
+    // it invokes leave and notification can be lost while we are "holding" it
+    event_controller_motion.connect_enter(clone!(
+        #[strong]
+        window,
+        move |_, _, _| {
+            window.inner.add_css_class("hover");
+
+            window.stop_timeout();
+        }
+    ));
+
+    event_controller_motion.connect_leave(clone!(
+        #[strong]
+        window,
+        move |_| {
+            window.inner.remove_css_class("hover");
+
+            window.start_timeout(clone!(
+                #[strong]
+                iface,
+                #[strong]
+                runtime_data,
+                move |id| async move {
+                    close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
+                }
+            ));
+        }
+    ));
 }

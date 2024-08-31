@@ -20,6 +20,8 @@ use zbus::{
     zvariant::{OwnedValue as Value, Type},
 };
 
+use crate::DEFAULT_EXPIRE_TIMEOUT;
+
 static BUS_NAME: &str = "org.freedesktop.Notifications";
 static BUS_OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
@@ -32,7 +34,7 @@ pub struct Details {
     pub body: Option<String>,
     pub actions: Vec<Action>,
     pub hints: Hints,
-    pub expire_timeout: Option<Duration>,
+    pub expire_timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -43,7 +45,7 @@ pub enum Message {
 }
 
 /// The reason the notification was closed
-#[derive(serde::Serialize, Type)]
+#[derive(serde::Serialize, Type, Debug)]
 #[repr(u32)]
 pub enum Reason {
     /// The notification expired
@@ -70,6 +72,7 @@ impl IFace {
         // to allow user modify what he want to use
         // e.g. disable sound or icons
         // all other stuff that implemented one of capabilities should also check and skip processing if off
+        debug!("Getting capabilities");
         vec![
             "action-icons",
             "actions",
@@ -96,14 +99,20 @@ impl IFace {
         hints: HashMap<&str, Value>,
         expire_timeout: i32,
     ) -> u32 {
+        debug!(
+            "Received notification request: app_name={}, replaces_id={}, summary={}",
+            app_name, replaces_id, summary
+        );
+
         let notification_id = if replaces_id != 0 && replaces_id <= Id::current_glob() {
             replaces_id
         } else {
             Id::bump_glob()
         };
 
-        trace!("raw hints keys: {:?}", hints.keys());
+        trace!("hints.keys: {:?}", hints.keys());
         let hints: Hints = Hints::from(hints);
+        debug!("Processed hints: {:?}", hints); // Log processed hints
 
         let details = Details {
             id: notification_id,
@@ -117,11 +126,13 @@ impl IFace {
             } else {
                 Some(app_icon.to_owned())
             },
-            summary: format!("<b>{}</b>", summary), // TODO if markup feature is enabled
+            // TODO if markup feature is enabled
+            summary: format!("<b>{}</b>", summary.replace("&", "&amp;")),
             body: if body.is_empty() {
                 None
             } else {
-                Some(body.to_owned())
+                // TODO if markup feature is enabled
+                Some(body.to_owned().replace("&", "&amp;"))
             },
             actions: actions
                 .chunks_exact(2)
@@ -129,9 +140,9 @@ impl IFace {
                 .collect(),
             hints,
             expire_timeout: match expire_timeout.cmp(&0) {
-                Ordering::Less => None,
-                Ordering::Equal => Some(Duration::MAX),
-                Ordering::Greater => Some(Duration::from_millis(expire_timeout as u64)),
+                Ordering::Less => DEFAULT_EXPIRE_TIMEOUT,
+                Ordering::Equal => Duration::MAX,
+                Ordering::Greater => Duration::from_millis(expire_timeout as u64),
             },
         };
 
@@ -143,6 +154,7 @@ impl IFace {
             error!("Failed to send notification message: {}", e);
         }
 
+        debug!("Notification sent with id: {}", notification_id);
         notification_id
     }
 
@@ -151,6 +163,8 @@ impl IFace {
         #[zbus(signal_context)] ctxt: SignalContext<'_>,
         id: u32,
     ) {
+        debug!("Closing notification with id: {}", id);
+
         if let Err(e) = self.sender.try_send(Message::Close(id)) {
             error!("Failed to send close notification message: {}", e);
         }
@@ -160,6 +174,7 @@ impl IFace {
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {
+        debug!("Retrieving server information");
         self.server_info.clone().into()
     }
 
@@ -187,6 +202,7 @@ impl IFace {
 
 impl IFace {
     pub fn new(server_info: ServerInfo, sender: Sender<Message>) -> Self {
+        info!("Creating new IFace instance");
         Self {
             server_info,
             sender,
@@ -194,6 +210,7 @@ impl IFace {
     }
 
     pub fn connect(self) -> Result<InterfaceRef<Self>, zbus::Error> {
+        info!("Establishing connection to the DBus interface");
         let connection = ConnectionBuilder::session()?
             .name(BUS_NAME)?
             .serve_at(BUS_OBJECT_PATH, self)?
