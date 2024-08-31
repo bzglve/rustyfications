@@ -12,7 +12,7 @@ use gtk::{
 use log::*;
 
 use crate::{
-    dbus::{Details, IFace, IFaceRef},
+    dbus::{Details, IFace, IFaceRef, Reason},
     types::RuntimeData,
     ICON_SIZE, WINDOW_CLOSE_ICON,
 };
@@ -21,7 +21,7 @@ use super::utils::{init_layer_shell, pixbuf};
 
 #[derive(Clone)]
 pub struct Window {
-    id: u32,
+    pub id: u32,
     // app_name: gtk::Label,
     icon: gtk::Image,
     summary: gtk::Label,
@@ -43,29 +43,19 @@ impl Window {
         *self.thandle.borrow_mut() = None;
     }
 
-    pub fn start_timeout<F, Fut>(&self, f: F)
-    where
-        F: FnOnce(u32) -> Fut + 'static,
-        Fut: std::future::Future<Output = ()>,
-    {
+    pub fn start_timeout(&self) {
         if self.thandle.borrow().is_none() {
             info!("Starting timeout for window id: {}", self.id);
             self.thandle
                 .borrow_mut()
                 .replace(glib::spawn_future_local(clone!(
-                    #[strong(rename_to=expire_timeout)]
-                    self.expire_timeout,
-                    #[strong(rename_to=inner)]
-                    self.inner,
-                    #[strong(rename_to=id)]
-                    self.id,
+                    #[strong(rename_to=s)]
+                    self,
                     async move {
-                        glib::timeout_future(expire_timeout).await;
+                        glib::timeout_future(s.expire_timeout).await;
 
-                        inner.close();
-                        info!("Window closed due to timeout for id: {}", id);
-
-                        f(id).await
+                        s.close(Reason::Expired);
+                        info!("Window closed due to timeout for id: {}", s.id);
                     }
                 )));
         } else {
@@ -74,7 +64,6 @@ impl Window {
     }
 }
 
-// From<Details> for
 impl Window {
     pub fn build(
         details: &Details,
@@ -268,19 +257,6 @@ impl Window {
             .visible(true)
             .build();
 
-        let gesture_click = gtk::GestureClick::builder().exclusive(true).build();
-        app_icon.add_controller(gesture_click.clone());
-        gesture_click.connect_released(clone!(
-            // #[strong]
-            // inner,
-            move |gesture, _, _, _| {
-                // TODO close window
-                info!("not yet implemented");
-
-                gesture.set_state(gtk::EventSequenceState::Claimed);
-            }
-        ));
-
         let event_conntroller_motion = gtk::EventControllerMotion::new();
         app_icon.add_controller(event_conntroller_motion.clone());
 
@@ -400,7 +376,27 @@ impl Window {
     pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
         info!("Creating window from details for id: {}", value.id);
         let mut _self = Self::build_widgets_tree(&value);
+
+        let gesture_click = gtk::GestureClick::builder().exclusive(true).build();
+        _self.app_icon.add_controller(gesture_click.clone());
+        gesture_click.connect_released(clone!(
+            #[strong(rename_to=s)]
+            _self,
+            move |gesture, _, _, _| {
+                s.close(Reason::Dismissed);
+
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+            }
+        ));
+
         _self.update_from_details(&value, iface);
         _self
+    }
+
+    pub fn close(&self, reason: Reason) {
+        unsafe {
+            self.inner.set_data("close-reason", reason);
+        }
+        self.inner.close();
     }
 }

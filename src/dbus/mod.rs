@@ -45,7 +45,7 @@ pub enum Message {
 }
 
 /// The reason the notification was closed
-#[derive(serde::Serialize, Type, Debug)]
+#[derive(serde::Serialize, Type, Debug, Clone, Copy)]
 #[repr(u32)]
 pub enum Reason {
     /// The notification expired

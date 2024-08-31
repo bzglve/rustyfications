@@ -99,21 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     );
                                     window.update_from_details(&details, iface.clone());
 
-                                    window.start_timeout(clone!(
-                                        #[strong]
-                                        iface,
-                                        #[strong]
-                                        runtime_data,
-                                        move |id| async move {
-                                            close_hook(
-                                                id,
-                                                Reason::Expired,
-                                                iface.clone(),
-                                                runtime_data.clone(),
-                                            )
-                                            .await;
-                                        }
-                                    ));
+                                    window.start_timeout();
                                 }
                                 None => {
                                     warn!(
@@ -132,10 +118,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Message::Close(id) => {
                             info!("Closing notification with id: {}", id);
                             if let Some(w) = runtime_data.borrow().windows.get(&id) {
-                                w.inner.close()
+                                w.close(Reason::Closed)
                             }
-                            close_hook(id, Reason::Closed, iface.clone(), runtime_data.clone())
-                                .await;
                         }
                     }
                 }
@@ -168,6 +152,34 @@ fn new_notification(
         runtime_data.clone(),
     );
 
+    window.inner.connect_unrealize(clone!(
+        #[strong]
+        window,
+        #[strong]
+        iface,
+        #[strong]
+        runtime_data,
+        move |_window| {
+            let reason = unsafe {
+                window
+                    .inner
+                    .data::<Reason>("close-reason")
+                    .map(|v| *v.as_ref())
+            };
+            if reason.is_none() {
+                panic!("Can't get close Reason from window data. Probably you called `gtk::Window::close()` intead of `crate::gui::Window::close()`");
+            }
+            let reason = reason.unwrap();
+
+            glib::spawn_future_local(close_hook(
+                window.id,
+                reason,
+                iface.clone(),
+                runtime_data.clone(),
+            ));
+        }
+    ));
+
     window.inner.present();
 
     if !NEW_ON_TOP {
@@ -191,15 +203,7 @@ fn new_notification(
         );
     }
 
-    window.start_timeout(clone!(
-        #[strong]
-        iface,
-        #[strong]
-        runtime_data,
-        move |id| async move {
-            close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
-        }
-    ));
+    window.start_timeout();
 
     debug!("Setting up gesture controls for window.");
 
@@ -237,33 +241,19 @@ fn new_notification(
         #[strong]
         iface,
         #[strong]
-        runtime_data,
-        #[strong]
         window,
         move |gesture, _, _, _| {
             debug!("Middle mouse button released.");
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
-                #[strong]
-                runtime_data,
-                #[strong]
-                window,
                 async move {
                     IFace::action_invoked(iface.signal_context(), details.id, Action::default())
                         .await
                         .unwrap();
-
-                    window.inner.close();
-                    close_hook(
-                        details.id,
-                        Reason::Dismissed,
-                        iface.clone(),
-                        runtime_data.clone(),
-                    )
-                    .await;
                 }
             ));
+            window.close(Reason::Dismissed);
 
             gesture.set_state(gtk::EventSequenceState::Claimed);
         }
@@ -275,31 +265,10 @@ fn new_notification(
 
     gesture_click_3.connect_released(clone!(
         #[strong]
-        iface,
-        #[strong]
-        runtime_data,
-        #[strong]
         window,
         move |gesture, _, _, _| {
             debug!("Right mouse button released.");
-            glib::spawn_future_local(clone!(
-                #[strong]
-                iface,
-                #[strong]
-                runtime_data,
-                #[strong]
-                window,
-                async move {
-                    window.inner.close();
-                    close_hook(
-                        details.id,
-                        Reason::Dismissed,
-                        iface.clone(),
-                        runtime_data.clone(),
-                    )
-                    .await;
-                }
-            ));
+            window.close(Reason::Dismissed);
 
             gesture.set_state(gtk::EventSequenceState::Claimed);
         }
@@ -326,15 +295,7 @@ fn new_notification(
         move |_| {
             window.inner.remove_css_class("hover");
 
-            window.start_timeout(clone!(
-                #[strong]
-                iface,
-                #[strong]
-                runtime_data,
-                move |id| async move {
-                    close_hook(id, Reason::Expired, iface.clone(), runtime_data.clone()).await;
-                }
-            ));
+            window.start_timeout();
         }
     ));
 }

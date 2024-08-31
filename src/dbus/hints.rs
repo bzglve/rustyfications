@@ -66,10 +66,19 @@ mod idata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hints {
     pub action_icons: bool,
+    // category
     pub desktop_entry: Option<String>,
     pub image_data: Option<IData>,
     pub image_path: Option<String>,
     pub icon_data: Option<IData>,
+    // resident
+    // sound-file
+    // sound-name
+    // suppress-sound
+    // transient
+    // x
+    // y
+    // urgency
 }
 
 impl From<HashMap<&str, Value>> for Hints {
@@ -94,9 +103,15 @@ impl From<HashMap<&str, Value>> for Hints {
             }
         };
 
-        let image_data = value.remove("image-data").and_then(|v| v.try_into().ok());
+        let mut image_data = value.remove("image-data").and_then(|v| v.try_into().ok());
+        if image_data.is_none() {
+            image_data = value.remove("image_data").and_then(|v| v.try_into().ok());
+        }
         let image_path = {
-            let v: Option<String> = value.remove("image-path").and_then(|v| v.try_into().ok());
+            let mut v: Option<String> = value.remove("image-path").and_then(|v| v.try_into().ok());
+            if v.is_none() {
+                v = value.remove("image_path").and_then(|v| v.try_into().ok());
+            }
             if let Some(s) = v {
                 if s.is_empty() {
                     None
