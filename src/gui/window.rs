@@ -104,12 +104,13 @@ impl Window {
 
         self.summary.set_label(&value.summary);
 
-        // FIXME
-        // cannot find for `org.freedesktop.network-manager-applet`
-        // (used for nmcli state change with nm-applet)
         let mut desktop_entry: Option<gio::DesktopAppInfo> = None;
         if let Some(de) = value.hints.desktop_entry {
             desktop_entry = gio::DesktopAppInfo::new(&de);
+
+            if desktop_entry.is_none() {
+                desktop_entry = gio::DesktopAppInfo::new(&format!("{}.desktop", de));
+            }
         }
         if desktop_entry.is_none() && value.app_name.is_some() {
             let an = value.app_name.unwrap();
@@ -193,7 +194,6 @@ impl Window {
             });
         }
 
-        // TODO debug low resolution with `nm-signal-75`
         self.icon.set_visible(false);
         let mut pixbuf: Option<Pixbuf> = None;
         if let Some(image_data) = value.hints.image_data {
@@ -377,7 +377,7 @@ impl Window {
         info!("Creating window from details for id: {}", value.id);
         let mut _self = Self::build_widgets_tree(&value);
 
-        let gesture_click = gtk::GestureClick::builder().exclusive(true).build();
+        let gesture_click = gtk::GestureClick::builder().build();
         _self.app_icon.add_controller(gesture_click.clone());
         gesture_click.connect_released(clone!(
             #[strong(rename_to=s)]
@@ -398,5 +398,12 @@ impl Window {
             self.inner.set_data("close-reason", reason);
         }
         self.inner.close();
+    }
+
+    pub fn has_default_action(&self) -> bool {
+        if let Some(tooltip_text) = self.inner.tooltip_text() {
+            return !tooltip_text.is_empty();
+        }
+        false
     }
 }

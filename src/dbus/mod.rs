@@ -52,7 +52,7 @@ pub enum Reason {
     Expired = 1,
     /// The notification was dismissed by the user
     Dismissed = 2,
-    /// The notification was closed by a call to [CloseNotification](NotificationsIFace::close_notification())
+    /// The notification was closed by a call to [CloseNotification](IFace::close_notification())
     Closed = 3,
     /// Undefined/reserved reasons
     #[allow(dead_code)]
@@ -112,7 +112,7 @@ impl IFace {
 
         trace!("hints.keys: {:?}", hints.keys());
         let hints: Hints = Hints::from(hints);
-        debug!("Processed hints: {:?}", hints); // Log processed hints
+        debug!("Processed hints: {:?}", hints);
 
         let details = Details {
             id: notification_id,

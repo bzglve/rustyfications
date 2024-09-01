@@ -81,8 +81,6 @@ mod css {
     }
 }
 
-// TODO connect to some of window/widget closing events to spawn that
-// unrealize event
 pub async fn close_hook(
     id: u32,
     died_from: Reason,

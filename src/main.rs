@@ -182,78 +182,57 @@ fn new_notification(
 
     window.inner.present();
 
-    if !NEW_ON_TOP {
-        margins_update(runtime_data.clone());
-    } else {
-        glib::timeout_add_local(
-            Duration::from_millis(50),
-            clone!(
-                #[strong]
-                window,
-                #[strong]
-                runtime_data,
-                move || {
-                    if window.inner.is_mapped() {
-                        margins_update(runtime_data.clone());
-                        return glib::ControlFlow::Break;
-                    }
-                    glib::ControlFlow::Continue
+    glib::timeout_add_local(
+        Duration::from_millis(50),
+        clone!(
+            #[strong]
+            window,
+            #[strong]
+            runtime_data,
+            move || {
+                if window.inner.is_mapped() {
+                    margins_update(runtime_data.clone());
+                    return glib::ControlFlow::Break;
                 }
-            ),
-        );
-    }
+                glib::ControlFlow::Continue
+            }
+        ),
+    );
 
     window.start_timeout();
 
     debug!("Setting up gesture controls for window.");
 
     // lmb
-    let gesture_click_1 = gtk::GestureClick::builder()
-        .button(1)
-        .exclusive(true)
-        .build();
+    let gesture_click_1 = gtk::GestureClick::builder().button(1).build();
     window.inner.add_controller(gesture_click_1.clone());
 
     gesture_click_1.connect_released(clone!(
         #[strong]
         iface,
+        #[strong]
+        window,
         move |gesture, _, _, _| {
             debug!("Left mouse button released.");
             glib::spawn_future_local(clone!(
                 #[strong]
                 iface,
-                async move {
-                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
-                        .await
-                        .unwrap();
-                }
-            ));
-
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        }
-    ));
-
-    // mmb
-    let gesture_click_2 = gtk::GestureClick::builder().button(2).build();
-    window.inner.add_controller(gesture_click_2.clone());
-
-    gesture_click_2.connect_released(clone!(
-        #[strong]
-        iface,
-        #[strong]
-        window,
-        move |gesture, _, _, _| {
-            debug!("Middle mouse button released.");
-            glib::spawn_future_local(clone!(
                 #[strong]
-                iface,
+                window,
                 async move {
-                    IFace::action_invoked(iface.signal_context(), details.id, Action::default())
+                    if window.has_default_action() {
+                        IFace::action_invoked(
+                            iface.signal_context(),
+                            details.id,
+                            Action::default(),
+                        )
                         .await
                         .unwrap();
+
+                        window.close(Reason::Dismissed);
+                    }
                 }
             ));
-            window.close(Reason::Dismissed);
 
             gesture.set_state(gtk::EventSequenceState::Claimed);
         }
