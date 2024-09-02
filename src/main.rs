@@ -11,6 +11,7 @@ use gtk::{
     glib::{self, clone},
     prelude::*,
 };
+use gtk_layer_shell::{KeyboardMode, LayerShell};
 use gui::{build_ui, utils::margins_update, window::Window};
 #[allow(unused_imports)]
 use log::*;
@@ -269,6 +270,11 @@ fn new_notification(
         move |_, _, _| {
             window.inner.add_css_class("hover");
 
+            // this is workaround to proper passive work
+            // if set this permanent then window will steal focus
+            // but notification must be passive. Without interrupting user
+            window.inner.set_keyboard_mode(KeyboardMode::OnDemand);
+
             window.stop_timeout();
         }
     ));
@@ -278,6 +284,8 @@ fn new_notification(
         window,
         move |_| {
             window.inner.remove_css_class("hover");
+
+            window.inner.set_keyboard_mode(KeyboardMode::None);
 
             window.start_timeout();
         }

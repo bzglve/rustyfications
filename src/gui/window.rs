@@ -27,6 +27,7 @@ pub struct Window {
     summary: gtk::Label,
     app_icon: gtk::Image,
     body: gtk::Label,
+    reply_entry: gtk::Entry,
     actions_box: gtk::Box,
     expire_timeout: Duration,
     thandle: Rc<RefCell<Option<JoinHandle<()>>>>,
@@ -76,6 +77,35 @@ impl Window {
 
         init_layer_shell(&window.inner);
         window.inner.set_application(Some(&application));
+
+        window.reply_entry.connect_activate(clone!(
+            #[strong]
+            details,
+            #[strong]
+            iface,
+            move |entry| {
+                if !entry.text().is_empty() {
+                    glib::spawn_future_local(clone!(
+                        #[strong]
+                        entry,
+                        #[strong]
+                        iface,
+                        async move {
+                            IFace::notification_replied(
+                                iface.signal_context(),
+                                details.id,
+                                &entry.text(),
+                            )
+                            .await
+                            .unwrap();
+                        }
+                    ));
+                } else {
+                    // TODO need to somehow notify user in the ui
+                    warn!("The entry cannot be empty!");
+                }
+            }
+        ));
 
         runtime_data
             .borrow_mut()
@@ -148,6 +178,9 @@ impl Window {
         self.body.set_label(&value.body.clone().unwrap_or_default());
         self.body.set_visible(value.body.is_some());
 
+        self.reply_entry
+            .set_visible(value.actions.iter().any(|a| a.key == "inline-reply"));
+
         let actions_box = self.actions_box.clone();
 
         let default_action = value.actions.iter().find(|a| a.key == "default").cloned();
@@ -164,6 +197,8 @@ impl Window {
                 if !value.hints.action_icons {
                     btn.set_label(&action.text);
                 } else {
+                    // TODO if icons is used need to have fallback or some override map
+                    // e.g. `inline-reply`
                     btn.set_icon_name(&action.key);
                 }
                 btn.set_tooltip_text(Some(&action.text));
@@ -173,7 +208,13 @@ impl Window {
                     iface,
                     #[strong]
                     action,
+                    #[strong(rename_to=entry)]
+                    self.reply_entry,
                     move |_| {
+                        if action.key == "inline-reply" {
+                            entry.emit_activate();
+                        }
+
                         glib::spawn_future_local(clone!(
                             #[strong]
                             iface,
@@ -248,6 +289,11 @@ impl Window {
             .halign(Align::Start)
             .ellipsize(EllipsizeMode::End)
             .use_markup(true)
+            .build();
+
+        let reply_entry = gtk::Entry::builder()
+            .visible(false)
+            .placeholder_text("Reply")
             .build();
 
         let app_icon = gtk::Image::builder()
@@ -330,6 +376,7 @@ impl Window {
         // main_box.append(&app_name);
         main_box.append(&summary_box);
         main_box.append(&body);
+        main_box.append(&reply_entry);
 
         let outer_box = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -366,6 +413,7 @@ impl Window {
             summary,
             app_icon,
             body,
+            reply_entry,
             actions_box,
             expire_timeout: value.expire_timeout,
             thandle: Default::default(),

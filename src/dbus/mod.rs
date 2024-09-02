@@ -74,6 +74,7 @@ impl IFace {
         // all other stuff that implemented one of capabilities should also check and skip processing if off
         debug!("Getting capabilities");
         vec![
+            // freedesktop
             "action-icons",
             "actions",
             "body",
@@ -84,6 +85,9 @@ impl IFace {
             "icon-static",
             // "persistence",
             // "sound",
+
+            // custom but known
+            "inline-reply",
         ]
     }
 
@@ -183,6 +187,13 @@ impl IFace {
         ctxt: &SignalContext<'_>,
         id: u32,
         reason: Reason,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    pub async fn notification_replied(
+        ctxt: &SignalContext<'_>,
+        id: u32,
+        text: &str,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]

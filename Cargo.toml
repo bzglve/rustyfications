@@ -1,6 +1,6 @@
 [package]
 name = "rustyfications"
-version = "0.1.9"
+version = "0.1.10-alpha"
 edition = "2021"
 authors = ["bzglve"]
 
