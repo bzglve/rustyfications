@@ -55,3 +55,19 @@ sudo cp target/release/rustyfications /usr/bin/rustyfications
 ```
 
 From now you don't need to manually start daemon. It will be activated automatically on any client request
+
+## Planning
+
+- configuration
+- more capabilities and hints support
+- ipc like stuff to call already running daemon
+- [SwayNotificationCcenter](https://github.com/ErikReider/SwayNotificationCenter)-like sidebar window
+- packaging
+
+## Motivation
+
+Practice myself and write something that I will use every day.
+
+Other tools don't quite meet my needs.
+
+Highly inspired by [SwayNotificationCcenter](https://github.com/ErikReider/SwayNotificationCenter)
