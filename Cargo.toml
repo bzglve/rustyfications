@@ -2,6 +2,7 @@
 name = "rustyfications"
 version = "0.1.9"
 edition = "2021"
+authors = ["bzglve"]
 
 [dependencies]
 # gui

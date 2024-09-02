@@ -51,7 +51,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let iface = Rc::new(
         IFace::new(
-            ServerInfo::new("rustyfications", "bzglve", env!("CARGO_PKG_VERSION"), "1.2"),
+            ServerInfo::new(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_AUTHORS"),
+                env!("CARGO_PKG_VERSION"),
+                "1.2",
+            ),
             sender,
         )
         .connect()
