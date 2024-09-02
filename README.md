@@ -5,7 +5,7 @@ Rusty notification daemon for Wayland.
 ---
 ![screenshot](assets/screenshot.png)
 
-![screenshot-icons-hyprlink](assets/penguin.png)
+![inline-reply](assets/inline-reply.png)
 
 ![rickroll](assets/rickroll.png)
 
