@@ -103,7 +103,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         "Updating existing notification window with id: {}",
                                         details.id
                                     );
-                                    window.update_from_details(&details, iface.clone());
+                                    window.update_from_details(
+                                        &details,
+                                        iface.clone(),
+                                        runtime_data.clone(),
+                                    );
 
                                     window.start_timeout();
                                 }

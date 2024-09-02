@@ -28,6 +28,7 @@ pub struct Window {
     app_icon: gtk::Image,
     body: gtk::Label,
     reply_entry: gtk::Entry,
+    reply_revealer: gtk::Revealer,
     actions_box: gtk::Box,
     expire_timeout: Duration,
     thandle: Rc<RefCell<Option<JoinHandle<()>>>>,
@@ -73,7 +74,7 @@ impl Window {
         runtime_data: RuntimeData,
     ) -> Self {
         info!("Building window from details: {:?}", details);
-        let window = Window::from_details(details.clone(), iface.clone());
+        let window = Window::from_details(details.clone(), iface.clone(), runtime_data.clone());
 
         init_layer_shell(&window.inner);
         window.inner.set_application(Some(&application));
@@ -119,7 +120,12 @@ impl Window {
         window
     }
 
-    pub fn update_from_details(&mut self, value: &Details, iface: Rc<IFaceRef>) {
+    pub fn update_from_details(
+        &mut self,
+        value: &Details,
+        iface: Rc<IFaceRef>,
+        runtime_data: RuntimeData,
+    ) {
         debug!("Updating window from details: {:?}", value);
         if self.thandle.borrow().is_some() {
             self.stop_timeout();
@@ -197,39 +203,47 @@ impl Window {
                 if !value.hints.action_icons {
                     btn.set_label(&action.text);
                 } else {
-                    // TODO if icons is used need to have fallback or some override map
-                    // e.g. `inline-reply`
-                    btn.set_icon_name(&action.key);
+                    let runtime_data = runtime_data.borrow();
+                    let redef = runtime_data.icon_redefines.get(&action.key).unwrap_or(&action.key);
+                    btn.set_icon_name(redef);
                 }
                 btn.set_tooltip_text(Some(&action.text));
 
-                btn.connect_clicked(clone!(
-                    #[strong]
-                    iface,
-                    #[strong]
-                    action,
-                    #[strong(rename_to=entry)]
-                    self.reply_entry,
-                    move |_| {
-                        if action.key == "inline-reply" {
-                            entry.emit_activate();
-                        }
-
-                        glib::spawn_future_local(clone!(
-                            #[strong]
-                            iface,
-                            #[strong]
-                            action,
-                            async move {
-                                if let Err(e) = IFace::action_invoked(iface.signal_context(), value.id, action.clone()).await {
-                                    error!("Failed to invoke action: {} for window id: {}. Error: {:?}", action.key, value.id, e);
-                                } else {
-                                    info!("Action invoked: {} for window id: {}", action.key, value.id);
-                                }
+                if action.key == "inline-reply" {
+                    btn.connect_clicked(clone!(
+                        #[strong(rename_to=s)]
+                        self,
+                        move |_| {
+                            if s.reply_entry.text().is_empty() {
+                                s.reply_revealer.set_reveal_child(!s.reply_revealer.reveals_child());
+                            } else {
+                                s.reply_entry.emit_activate();
                             }
-                        ));
-                    }
-                ));
+                        }
+                    ));
+                } else {
+                    btn.connect_clicked(clone!(
+                        #[strong]
+                        iface,
+                        #[strong]
+                        action,
+                        move |_| {
+                            glib::spawn_future_local(clone!(
+                                #[strong]
+                                iface,
+                                #[strong]
+                                action,
+                                async move {
+                                    if let Err(e) = IFace::action_invoked(iface.signal_context(), value.id, action.clone()).await {
+                                        error!("Failed to invoke action: {} for window id: {}. Error: {:?}", action.key, value.id, e);
+                                    } else {
+                                        info!("Action invoked: {} for window id: {}", action.key, value.id);
+                                    }
+                                }
+                            ));
+                        }
+                    ));
+                }
 
                 btn
             });
@@ -291,9 +305,11 @@ impl Window {
             .use_markup(true)
             .build();
 
-        let reply_entry = gtk::Entry::builder()
-            .visible(false)
-            .placeholder_text("Reply")
+        let reply_entry = gtk::Entry::builder().placeholder_text("Reply").build();
+
+        let reply_revealer = gtk::Revealer::builder()
+            .reveal_child(false)
+            .child(&reply_entry)
             .build();
 
         let app_icon = gtk::Image::builder()
@@ -376,7 +392,7 @@ impl Window {
         // main_box.append(&app_name);
         main_box.append(&summary_box);
         main_box.append(&body);
-        main_box.append(&reply_entry);
+        main_box.append(&reply_revealer);
 
         let outer_box = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -414,6 +430,7 @@ impl Window {
             app_icon,
             body,
             reply_entry,
+            reply_revealer,
             actions_box,
             expire_timeout: value.expire_timeout,
             thandle: Default::default(),
@@ -421,7 +438,7 @@ impl Window {
         }
     }
 
-    pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
+    pub fn from_details(value: Details, iface: Rc<IFaceRef>, runtime_data: RuntimeData) -> Self {
         info!("Creating window from details for id: {}", value.id);
         let mut _self = Self::build_widgets_tree(&value);
 
@@ -437,7 +454,7 @@ impl Window {
             }
         ));
 
-        _self.update_from_details(&value, iface);
+        _self.update_from_details(&value, iface, runtime_data);
         _self
     }
 
