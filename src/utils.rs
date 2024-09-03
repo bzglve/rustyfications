@@ -30,7 +30,6 @@ mod css {
             borders, theme_base_color
         );
 
-        // TODO move to config?
         provider.load_from_data(&format!(
             "
     #notification {{

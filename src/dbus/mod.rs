@@ -20,7 +20,7 @@ use zbus::{
     zvariant::{OwnedValue as Value, Type},
 };
 
-use crate::DEFAULT_EXPIRE_TIMEOUT;
+use crate::config::CONFIG;
 
 static BUS_NAME: &str = "org.freedesktop.Notifications";
 static BUS_OBJECT_PATH: &str = "/org/freedesktop/Notifications";
@@ -144,7 +144,7 @@ impl IFace {
                 .collect(),
             hints,
             expire_timeout: match expire_timeout.cmp(&0) {
-                Ordering::Less => DEFAULT_EXPIRE_TIMEOUT,
+                Ordering::Less => Duration::from_millis(CONFIG.lock().unwrap().expire_timeout),
                 Ordering::Equal => Duration::MAX,
                 Ordering::Greater => Duration::from_millis(expire_timeout as u64),
             },

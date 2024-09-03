@@ -1,33 +1,69 @@
 use gtk::prelude::WidgetExt;
 use gtk_layer_shell::{Edge, LayerShell};
 
-use crate::{types::RuntimeData, NEW_ON_TOP};
+use crate::{
+    config::{edge::Edge as ConfigEdge, CONFIG},
+    types::RuntimeData,
+};
 
 use super::window::Window;
 
 pub fn init_layer_shell(window: &impl LayerShell) {
     window.init_layer_shell();
 
-    window.set_anchor(Edge::Top, true);
-    window.set_anchor(Edge::Right, true);
+    let edges = CONFIG.lock().unwrap().edges.clone();
+    let margins = CONFIG.lock().unwrap().margins.clone();
+    let paddings = CONFIG.lock().unwrap().paddings.clone();
 
-    window.set_margin(Edge::Right, 5);
+    window.set_anchor(Edge::Left, edges.contains(&ConfigEdge::Left));
+    window.set_anchor(Edge::Right, edges.contains(&ConfigEdge::Right));
+    window.set_anchor(Edge::Top, edges.contains(&ConfigEdge::Top));
+    window.set_anchor(Edge::Bottom, edges.contains(&ConfigEdge::Bottom));
+
+    for (edge, margin) in edges
+        .iter()
+        .zip(margins.iter().zip(paddings.iter()).map(|(m, p)| m + p))
+    {
+        window.set_margin((*edge).into(), margin);
+    }
 }
 
 pub fn margins_update(runtime_data: RuntimeData) {
+    let edges = CONFIG.lock().unwrap().edges.clone();
+    let margins = CONFIG.lock().unwrap().margins.clone();
+    let paddings = CONFIG.lock().unwrap().paddings.clone();
+
     let runtime_data = runtime_data.borrow();
     let windows = runtime_data.windows.iter();
 
-    let iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if NEW_ON_TOP {
+    let new_on_top = CONFIG.lock().unwrap().new_on_top;
+    let iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if new_on_top {
         Box::new(windows.rev())
     } else {
         Box::new(windows)
     };
 
-    let mut indent = 5;
+    let mut indent = paddings
+        .iter()
+        .zip(edges.iter())
+        .find(|(_, e)| **e == ConfigEdge::Top || **e == ConfigEdge::Bottom)
+        .map(|(p, _)| p)
+        .cloned()
+        .unwrap_or_default();
     for (_, window) in iter {
-        window.inner.set_margin(Edge::Top, indent);
-        indent += window.inner.height() + 5;
+        if edges.contains(&ConfigEdge::Top) {
+            window.inner.set_margin(Edge::Top, indent);
+        } else if edges.contains(&ConfigEdge::Bottom) {
+            window.inner.set_margin(Edge::Bottom, indent);
+        }
+        indent += window.inner.height()
+            + margins
+                .iter()
+                .zip(edges.iter())
+                .find(|(_, e)| **e == ConfigEdge::Left || **e == ConfigEdge::Right)
+                .map(|(p, _)| p)
+                .cloned()
+                .unwrap_or_default();
     }
 }
 
@@ -36,7 +72,7 @@ pub mod pixbuf {
 
     use gtk::{gdk, gdk_pixbuf::Pixbuf, prelude::FileExt, IconLookupFlags, TextDirection};
 
-    use crate::ICON_SIZE;
+    use crate::config::CONFIG;
 
     pub fn new_from_str(value: &str) -> Option<Pixbuf> {
         if PathBuf::from(value).is_absolute() {
@@ -47,7 +83,7 @@ pub mod pixbuf {
                 let ipaint = itheme.lookup_icon(
                     value,
                     &["image-missing"],
-                    ICON_SIZE,
+                    CONFIG.lock().unwrap().icon_size,
                     1,
                     TextDirection::None,
                     IconLookupFlags::empty(),

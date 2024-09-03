@@ -1,0 +1,42 @@
+(
+    // we are respect freedesktop timeouts
+    // this parameter is for notification with undefined expiration
+    expire_timeout: 5000,
+
+    icon_size: 72,
+
+    // Off, Error, Warn, Info, Debug, Trace
+    log_level: Info,
+
+    show_app_name: false,
+
+    // that icon is used in upper right corner
+    window_close_icon: "window-close",
+
+    // some action keys can not have matching icon names
+    // that map used as an alias for buttons icons
+    icon_redefines: {
+        "inline-reply": "mail-reply",
+        "dismiss": "window-close",
+    },
+
+    // most recent notifications appears from anchored edge
+    new_on_top: true,
+
+    // (width, height)
+    // (410, 30) - optimal size for display 40 characters in 12px font with 5px window "padding"
+    window_size: (410, 30),
+
+    // window anchors (position)
+    // Left, Right, Top, Bottom
+    // using two opposite anchors to stretch window(s) is not allowed
+    edges: [Top, Right],
+
+    // margins is used for spacing between windows
+    // the order is just like in `edges` field
+    margins: [5, 5],
+
+    // paddings is used for spacing all notifications from the edges
+    // the order is just like in `edges` field
+    paddings: [5, 0],
+)

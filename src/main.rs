@@ -1,3 +1,4 @@
+mod config;
 mod dbus;
 mod gui;
 mod types;
@@ -5,6 +6,7 @@ mod utils;
 
 use std::{error::Error, rc::Rc, sync::Arc, time::Duration};
 
+use config::CONFIG;
 use dbus::{Action, Details, IFace, IFaceRef, Message, Reason, ServerInfo};
 use futures::{channel::mpsc, lock::Mutex, StreamExt};
 use gtk::{
@@ -21,14 +23,6 @@ use utils::{close_hook, load_css};
 
 pub static MAIN_APP_ID: &str = "com.bzglve.rustyfications";
 
-// TODO move to config
-pub static DEFAULT_EXPIRE_TIMEOUT: Duration = Duration::from_secs(5);
-pub static NEW_ON_TOP: bool = true;
-pub static ICON_SIZE: i32 = 72;
-pub static LOG_LEVEL: LevelFilter = LevelFilter::Trace;
-
-pub static WINDOW_CLOSE_ICON: &str = "window-close";
-
 fn main() -> Result<(), Box<dyn Error>> {
     if connected_to_journal() {
         JournalLog::new()
@@ -39,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         env_logger::init();
     }
-    log::set_max_level(LOG_LEVEL);
+    log::set_max_level(CONFIG.lock().unwrap().log_level.into());
 
     info!("Starting application...");
 
@@ -103,11 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         "Updating existing notification window with id: {}",
                                         details.id
                                     );
-                                    window.update_from_details(
-                                        &details,
-                                        iface.clone(),
-                                        runtime_data.clone(),
-                                    );
+                                    window.update_from_details(&details, iface.clone());
 
                                     window.start_timeout();
                                 }
@@ -137,6 +127,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
 
         load_css();
+
+        debug!("CONFIG: {:#?}", CONFIG.lock().unwrap());
     });
 
     application.connect_activate(build_ui);

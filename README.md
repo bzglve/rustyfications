@@ -56,12 +56,17 @@ sudo cp target/release/rustyfications /usr/bin/rustyfications
 
 From now you don't need to manually start daemon. It will be activated automatically on any client request
 
+## Configuration
+
+Default configuration provided in example [config.ron](examples/config/config.ron). It should be placed in user config dir either systems ( `~/.config/rustyfications/config.ron` / `/etc/xdg/rustyfications/config.ron` )
+
 ## Planning
 
 - configuration
 - more capabilities and hints support
+- styling customization
 - ipc like stuff to call already running daemon
-- [SwayNotificationCcenter](https://github.com/ErikReider/SwayNotificationCenter)-like sidebar window
+- [SwayNotificationCenter](https://github.com/ErikReider/SwayNotificationCenter)-like sidebar window
 - packaging
 
 ## Motivation
@@ -70,4 +75,4 @@ Practice myself and write something that I will use every day.
 
 Other tools don't quite meet my needs.
 
-Highly inspired by [SwayNotificationCcenter](https://github.com/ErikReider/SwayNotificationCenter)
+Highly inspired by [SwayNotificationCenter](https://github.com/ErikReider/SwayNotificationCenter)

@@ -12,9 +12,9 @@ use gtk::{
 use log::*;
 
 use crate::{
+    config::CONFIG,
     dbus::{Details, IFace, IFaceRef, Reason},
     types::RuntimeData,
-    ICON_SIZE, WINDOW_CLOSE_ICON,
 };
 
 use super::utils::{init_layer_shell, pixbuf};
@@ -22,7 +22,7 @@ use super::utils::{init_layer_shell, pixbuf};
 #[derive(Clone)]
 pub struct Window {
     pub id: u32,
-    // app_name: gtk::Label,
+    app_name: gtk::Label,
     icon: gtk::Image,
     summary: gtk::Label,
     app_icon: gtk::Image,
@@ -74,7 +74,7 @@ impl Window {
         runtime_data: RuntimeData,
     ) -> Self {
         info!("Building window from details: {:?}", details);
-        let window = Window::from_details(details.clone(), iface.clone(), runtime_data.clone());
+        let window = Window::from_details(details.clone(), iface.clone());
 
         init_layer_shell(&window.inner);
         window.inner.set_application(Some(&application));
@@ -120,12 +120,7 @@ impl Window {
         window
     }
 
-    pub fn update_from_details(
-        &mut self,
-        value: &Details,
-        iface: Rc<IFaceRef>,
-        runtime_data: RuntimeData,
-    ) {
+    pub fn update_from_details(&mut self, value: &Details, iface: Rc<IFaceRef>) {
         debug!("Updating window from details: {:?}", value);
         if self.thandle.borrow().is_some() {
             self.stop_timeout();
@@ -133,10 +128,10 @@ impl Window {
 
         let value = value.clone();
 
-        // // TODO visibility of app name should depend on configuration
-        // self.app_name
-        //     .set_label(&value.app_name.clone().unwrap_or_default());
-        // self.app_name.set_visible(value.app_name.is_some());
+        self.app_name
+            .set_label(&value.app_name.clone().unwrap_or_default());
+        self.app_name
+            .set_visible(CONFIG.lock().unwrap().show_app_name);
 
         self.summary.set_label(&value.summary);
 
@@ -178,7 +173,8 @@ impl Window {
                 }
             }
         } else {
-            self.app_icon.set_icon_name(Some(WINDOW_CLOSE_ICON));
+            self.app_icon
+                .set_icon_name(Some(&CONFIG.lock().unwrap().window_close_icon.clone()));
         }
 
         self.body.set_label(&value.body.clone().unwrap_or_default());
@@ -203,8 +199,8 @@ impl Window {
                 if !value.hints.action_icons {
                     btn.set_label(&action.text);
                 } else {
-                    let runtime_data = runtime_data.borrow();
-                    let redef = runtime_data.icon_redefines.get(&action.key).unwrap_or(&action.key);
+                    let config = CONFIG.lock().unwrap().clone();
+                    let redef = config.icon_redefines.get(&action.key).unwrap_or(&action.key);
                     btn.set_icon_name(redef);
                 }
                 btn.set_tooltip_text(Some(&action.text));
@@ -277,20 +273,27 @@ impl Window {
     fn build_widgets_tree(value: &Details) -> Self {
         trace!("Building widget tree for window id: {}", value.id);
 
+        let config = CONFIG.lock().unwrap().clone();
+
         let inner = gtk::Window::builder()
-            // optimal size to display 40 chars in 12px font and 5px margin
-            .default_width(410)
-            .default_height(30)
+            .default_width(config.window_size.0)
+            .default_height(config.window_size.1)
             .name("notification")
             .build();
 
-        // let app_name = gtk::Label::builder()
-        //     .name("app_name")
-        //     .justify(Justification::Left)
-        //     .halign(Align::Start)
-        //     .ellipsize(EllipsizeMode::End)
-        //     .sensitive(false)
-        //     .build();
+        let app_name = gtk::Label::builder()
+            .name("app_name")
+            .justify(Justification::Left)
+            .halign(Align::Start)
+            .ellipsize(EllipsizeMode::End)
+            .sensitive(false)
+            .build();
+        let app_name_box = gtk::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(5)
+            .visible(CONFIG.lock().unwrap().show_app_name)
+            .build();
+        app_name_box.append(&app_name);
 
         let summary_box = gtk::Box::builder()
             .orientation(Orientation::Horizontal)
@@ -339,7 +342,7 @@ impl Window {
                     }
                 }
 
-                app_icon.set_icon_name(Some(WINDOW_CLOSE_ICON));
+                app_icon.set_icon_name(Some(&CONFIG.lock().unwrap().window_close_icon.clone()));
             }
         ));
 
@@ -367,7 +370,11 @@ impl Window {
         ));
 
         summary_box.append(&summary);
-        summary_box.append(&app_icon);
+        if CONFIG.lock().unwrap().show_app_name {
+            app_name_box.append(&app_icon);
+        } else {
+            summary_box.append(&app_icon);
+        }
 
         let body = gtk::Label::builder()
             .name("body")
@@ -389,7 +396,7 @@ impl Window {
             .valign(Align::Start)
             .spacing(5)
             .build();
-        // main_box.append(&app_name);
+        main_box.append(&app_name_box);
         main_box.append(&summary_box);
         main_box.append(&body);
         main_box.append(&reply_revealer);
@@ -400,7 +407,7 @@ impl Window {
             .build();
         let icon = gtk::Image::builder()
             .visible(false)
-            .pixel_size(ICON_SIZE)
+            .pixel_size(CONFIG.lock().unwrap().icon_size)
             .valign(Align::Center)
             .halign(Align::End)
             .build();
@@ -424,7 +431,7 @@ impl Window {
         trace!("Widget tree built for window id: {}", value.id);
         Self {
             id: value.id,
-            // app_name,
+            app_name,
             icon,
             summary,
             app_icon,
@@ -438,7 +445,7 @@ impl Window {
         }
     }
 
-    pub fn from_details(value: Details, iface: Rc<IFaceRef>, runtime_data: RuntimeData) -> Self {
+    pub fn from_details(value: Details, iface: Rc<IFaceRef>) -> Self {
         info!("Creating window from details for id: {}", value.id);
         let mut _self = Self::build_widgets_tree(&value);
 
@@ -454,7 +461,7 @@ impl Window {
             }
         ));
 
-        _self.update_from_details(&value, iface, runtime_data);
+        _self.update_from_details(&value, iface);
         _self
     }
 
