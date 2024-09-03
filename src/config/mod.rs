@@ -4,16 +4,12 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-use defaults::*;
-use edge::Edge;
 use gtk::glib;
-use level_filter::LevelFilter;
+use log::LevelFilter as LogLevelFilter;
 use serde::{Deserialize, Serialize};
 
-pub mod level_filter {
+mod level_filter {
     use super::*;
-
-    use log::LevelFilter as LogLevelFilter;
 
     #[derive(Debug, Deserialize, Serialize, Clone, Copy)]
     pub enum LevelFilter {
@@ -120,99 +116,87 @@ mod defaults {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
-    #[serde(default = "expire_timeout")]
+    #[serde(default = "defaults::expire_timeout")]
     pub expire_timeout: u64,
-
-    #[serde(default = "new_on_top")]
+    #[serde(default = "defaults::new_on_top")]
     pub new_on_top: bool,
-
-    #[serde(default = "icon_size")]
+    #[serde(default = "defaults::icon_size")]
     pub icon_size: i32,
-
-    #[serde(default = "log_level")]
-    pub log_level: LevelFilter,
-
-    #[serde(default = "window_close_icon")]
+    #[serde(default = "defaults::log_level")]
+    pub log_level: level_filter::LevelFilter,
+    #[serde(default = "defaults::window_close_icon")]
     pub window_close_icon: String,
-
-    #[serde(default = "show_app_name")]
+    #[serde(default = "defaults::show_app_name")]
     pub show_app_name: bool,
-
-    #[serde(default = "window_size")]
+    #[serde(default = "defaults::window_size")]
     pub window_size: (i32, i32),
-
-    #[serde(default = "icon_redefines")]
+    #[serde(default = "defaults::icon_redefines")]
     pub icon_redefines: HashMap<String, String>,
-
-    #[serde(default = "edges")]
-    pub edges: Vec<Edge>,
-
-    #[serde(default = "margins")]
+    #[serde(default = "defaults::edges")]
+    pub edges: Vec<edge::Edge>,
+    #[serde(default = "defaults::margins")]
     pub margins: Vec<i32>,
-
-    #[serde(default = "paddings")]
+    #[serde(default = "defaults::paddings")]
     pub paddings: Vec<i32>,
 }
 
 impl Config {
-    pub fn new() -> Option<Config> {
-        let path;
+    pub fn new() -> Option<Self> {
+        let config_path = Self::find_config_path()?;
+        println!("Found config file {:?}", config_path);
 
-        let user_config = glib::user_config_dir()
-            .join("rustyfications")
-            .join("config.ron");
-
-        if user_config.exists() {
-            path = user_config;
-        } else if let Some(system_config) = glib::system_config_dirs().first() {
-            let system_config = system_config
-                .to_path_buf()
-                .join("rustyfications")
-                .join("config.ron");
-            if system_config.exists() {
-                path = system_config;
-            } else {
-                return None;
-            }
-        } else {
-            return None;
-        }
-
-        println!("Found config file {:?}", path);
-        match ron::from_str::<Self>(&fs::read_to_string(path.clone()).unwrap()) {
-            Ok(r) => {
-                if r.edges.contains(&Edge::Left) && r.edges.contains(&Edge::Right)
-                    || r.edges.contains(&Edge::Top) && r.edges.contains(&Edge::Bottom)
-                {
-                    eprintln!("Using two opposite edges is not allowed");
-                    println!("Using default configuration");
-                    return None;
-                }
-                Some(r)
-            }
+        match ron::from_str::<Self>(&fs::read_to_string(&config_path).unwrap()) {
+            Ok(config) if Self::validate_config(&config) => Some(config),
+            Ok(_) => None,
             Err(e) => {
                 eprintln!("{}", e);
-                println!("Using default configuration");
                 None
             }
         }
+    }
+
+    fn find_config_path() -> Option<std::path::PathBuf> {
+        let user_config = glib::user_config_dir().join("rustyfications/config.ron");
+        if user_config.exists() {
+            return Some(user_config);
+        }
+
+        glib::system_config_dirs().iter().find_map(|dir| {
+            let system_config = dir.join("rustyfications/config.ron");
+            if system_config.exists() {
+                Some(system_config)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn validate_config(config: &Self) -> bool {
+        if config.edges.contains(&edge::Edge::Left) && config.edges.contains(&edge::Edge::Right)
+            || config.edges.contains(&edge::Edge::Top) && config.edges.contains(&edge::Edge::Bottom)
+        {
+            eprintln!("Using two opposite edges is not allowed");
+            return false;
+        }
+
+        true
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            expire_timeout: expire_timeout(),
-            new_on_top: new_on_top(),
-            icon_size: icon_size(),
-            log_level: log_level(),
-            window_close_icon: window_close_icon(),
-            show_app_name: show_app_name(),
-            window_size: window_size(),
-            icon_redefines: icon_redefines(),
-            edges: edges(),
-            margins: margins(),
-            paddings: paddings(),
+            expire_timeout: defaults::expire_timeout(),
+            new_on_top: defaults::new_on_top(),
+            icon_size: defaults::icon_size(),
+            log_level: defaults::log_level(),
+            window_close_icon: defaults::window_close_icon(),
+            show_app_name: defaults::show_app_name(),
+            window_size: defaults::window_size(),
+            icon_redefines: defaults::icon_redefines(),
+            edges: defaults::edges(),
+            margins: defaults::margins(),
+            paddings: defaults::paddings(),
         }
     }
 }
