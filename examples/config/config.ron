@@ -15,7 +15,7 @@
 
     // some action keys can not have matching icon names
     // that map used as an alias for buttons icons
-    icon_redefines: {
+    icons_alias: {
         "inline-reply": "mail-reply",
         "dismiss": "window-close",
     },
@@ -30,13 +30,14 @@
     // window anchors (position)
     // Left, Right, Top, Bottom
     // using two opposite anchors to stretch window(s) is not allowed
-    edges: [Top, Right],
-
-    // margins is used for spacing between windows
-    // the order is just like in `edges` field
-    margins: [5, 5],
-
-    // paddings is used for spacing all notifications from the edges
-    // the order is just like in `edges` field
-    paddings: [5, 0],
+    edges: {
+        Top: (
+            margin: 5,
+            padding: 5,
+        ),
+        Right: (
+            margin: 5,
+            padding: 0,
+        )
+    },
 )

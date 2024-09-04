@@ -200,7 +200,7 @@ impl Window {
                     btn.set_label(&action.text);
                 } else {
                     let config = CONFIG.lock().unwrap().clone();
-                    let redef = config.icon_redefines.get(&action.key).unwrap_or(&action.key);
+                    let redef = config.icons_alias.get(&action.key).unwrap_or(&action.key);
                     btn.set_icon_name(redef);
                 }
                 btn.set_tooltip_text(Some(&action.text));

@@ -2,7 +2,10 @@ use gtk::prelude::WidgetExt;
 use gtk_layer_shell::{Edge, LayerShell};
 
 use crate::{
-    config::{edge::Edge as ConfigEdge, CONFIG},
+    config::{
+        edge::{Edge as ConfigEdge, EdgeInfo},
+        CONFIG,
+    },
     types::RuntimeData,
 };
 
@@ -12,26 +15,19 @@ pub fn init_layer_shell(window: &impl LayerShell) {
     window.init_layer_shell();
 
     let edges = CONFIG.lock().unwrap().edges.clone();
-    let margins = CONFIG.lock().unwrap().margins.clone();
-    let paddings = CONFIG.lock().unwrap().paddings.clone();
 
-    window.set_anchor(Edge::Left, edges.contains(&ConfigEdge::Left));
-    window.set_anchor(Edge::Right, edges.contains(&ConfigEdge::Right));
-    window.set_anchor(Edge::Top, edges.contains(&ConfigEdge::Top));
-    window.set_anchor(Edge::Bottom, edges.contains(&ConfigEdge::Bottom));
+    window.set_anchor(Edge::Left, edges.contains_key(&ConfigEdge::Left));
+    window.set_anchor(Edge::Right, edges.contains_key(&ConfigEdge::Right));
+    window.set_anchor(Edge::Top, edges.contains_key(&ConfigEdge::Top));
+    window.set_anchor(Edge::Bottom, edges.contains_key(&ConfigEdge::Bottom));
 
-    for (edge, margin) in edges
-        .iter()
-        .zip(margins.iter().zip(paddings.iter()).map(|(m, p)| m + p))
-    {
-        window.set_margin((*edge).into(), margin);
+    for (edge, edge_info) in edges.iter() {
+        window.set_margin((*edge).into(), edge_info.margin + edge_info.padding);
     }
 }
 
 pub fn margins_update(runtime_data: RuntimeData) {
     let edges = CONFIG.lock().unwrap().edges.clone();
-    let margins = CONFIG.lock().unwrap().margins.clone();
-    let paddings = CONFIG.lock().unwrap().paddings.clone();
 
     let runtime_data = runtime_data.borrow();
     let windows = runtime_data.windows.iter();
@@ -43,27 +39,23 @@ pub fn margins_update(runtime_data: RuntimeData) {
         Box::new(windows)
     };
 
-    let mut indent = paddings
-        .iter()
-        .zip(edges.iter())
-        .find(|(_, e)| **e == ConfigEdge::Top || **e == ConfigEdge::Bottom)
-        .map(|(p, _)| p)
-        .cloned()
-        .unwrap_or_default();
+    let mut indent = edges
+        .get(&ConfigEdge::Top)
+        .or(edges.get(&ConfigEdge::Bottom))
+        .unwrap_or(&EdgeInfo::default())
+        .padding;
     for (_, window) in iter {
-        if edges.contains(&ConfigEdge::Top) {
+        if edges.contains_key(&ConfigEdge::Top) {
             window.inner.set_margin(Edge::Top, indent);
-        } else if edges.contains(&ConfigEdge::Bottom) {
+        } else if edges.contains_key(&ConfigEdge::Bottom) {
             window.inner.set_margin(Edge::Bottom, indent);
         }
         indent += window.inner.height()
-            + margins
-                .iter()
-                .zip(edges.iter())
-                .find(|(_, e)| **e == ConfigEdge::Left || **e == ConfigEdge::Right)
-                .map(|(p, _)| p)
-                .cloned()
-                .unwrap_or_default();
+            + edges
+                .get(&ConfigEdge::Left)
+                .or(edges.get(&ConfigEdge::Right))
+                .unwrap_or(&EdgeInfo::default())
+                .margin;
     }
 }
 

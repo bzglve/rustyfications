@@ -44,12 +44,20 @@ mod level_filter {
 pub mod edge {
     use serde::{Deserialize, Serialize};
 
-    #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub enum Edge {
         Left,
         Right,
         Top,
         Bottom,
+    }
+
+    #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+    pub struct EdgeInfo {
+        #[serde(default)]
+        pub margin: i32,
+        #[serde(default)]
+        pub padding: i32,
     }
 
     impl From<Edge> for gtk_layer_shell::Edge {
@@ -67,7 +75,10 @@ pub mod edge {
 mod defaults {
     use std::collections::HashMap;
 
-    use super::{edge::Edge, level_filter::LevelFilter};
+    use super::{
+        edge::{Edge, EdgeInfo},
+        level_filter::LevelFilter,
+    };
 
     pub fn expire_timeout() -> u64 {
         5000
@@ -101,16 +112,25 @@ mod defaults {
         HashMap::new()
     }
 
-    pub fn edges() -> Vec<Edge> {
-        vec![Edge::Top, Edge::Right]
-    }
+    pub fn edges() -> HashMap<Edge, EdgeInfo> {
+        let mut val = HashMap::new();
 
-    pub fn margins() -> Vec<i32> {
-        vec![5, 5]
-    }
+        val.insert(
+            Edge::Top,
+            EdgeInfo {
+                margin: 5,
+                padding: 5,
+            },
+        );
+        val.insert(
+            Edge::Right,
+            EdgeInfo {
+                margin: 5,
+                padding: 0,
+            },
+        );
 
-    pub fn paddings() -> Vec<i32> {
-        vec![5, 0]
+        val
     }
 }
 
@@ -118,26 +138,22 @@ mod defaults {
 pub struct Config {
     #[serde(default = "defaults::expire_timeout")]
     pub expire_timeout: u64,
-    #[serde(default = "defaults::new_on_top")]
-    pub new_on_top: bool,
     #[serde(default = "defaults::icon_size")]
     pub icon_size: i32,
     #[serde(default = "defaults::log_level")]
     pub log_level: level_filter::LevelFilter,
-    #[serde(default = "defaults::window_close_icon")]
-    pub window_close_icon: String,
     #[serde(default = "defaults::show_app_name")]
     pub show_app_name: bool,
+    #[serde(default = "defaults::window_close_icon")]
+    pub window_close_icon: String,
+    #[serde(default = "defaults::icon_redefines")]
+    pub icons_alias: HashMap<String, String>,
+    #[serde(default = "defaults::new_on_top")]
+    pub new_on_top: bool,
     #[serde(default = "defaults::window_size")]
     pub window_size: (i32, i32),
-    #[serde(default = "defaults::icon_redefines")]
-    pub icon_redefines: HashMap<String, String>,
     #[serde(default = "defaults::edges")]
-    pub edges: Vec<edge::Edge>,
-    #[serde(default = "defaults::margins")]
-    pub margins: Vec<i32>,
-    #[serde(default = "defaults::paddings")]
-    pub paddings: Vec<i32>,
+    pub edges: HashMap<edge::Edge, edge::EdgeInfo>,
 }
 
 impl Config {
@@ -172,8 +188,10 @@ impl Config {
     }
 
     fn validate_config(config: &Self) -> bool {
-        if config.edges.contains(&edge::Edge::Left) && config.edges.contains(&edge::Edge::Right)
-            || config.edges.contains(&edge::Edge::Top) && config.edges.contains(&edge::Edge::Bottom)
+        if config.edges.contains_key(&edge::Edge::Left)
+            && config.edges.contains_key(&edge::Edge::Right)
+            || config.edges.contains_key(&edge::Edge::Top)
+                && config.edges.contains_key(&edge::Edge::Bottom)
         {
             eprintln!("Using two opposite edges is not allowed");
             return false;
@@ -193,13 +211,20 @@ impl Default for Config {
             window_close_icon: defaults::window_close_icon(),
             show_app_name: defaults::show_app_name(),
             window_size: defaults::window_size(),
-            icon_redefines: defaults::icon_redefines(),
+            icons_alias: defaults::icon_redefines(),
             edges: defaults::edges(),
-            margins: defaults::margins(),
-            paddings: defaults::paddings(),
         }
     }
 }
 
-pub static CONFIG: LazyLock<Mutex<Config>> =
-    LazyLock::new(|| Mutex::new(Config::new().unwrap_or_default()));
+pub static CONFIG: LazyLock<Mutex<Config>> = LazyLock::new(|| {
+    Mutex::new({
+        match Config::new() {
+            Some(c) => c,
+            None => {
+                println!("Using default configuration");
+                Config::default()
+            }
+        }
+    })
+});
