@@ -16,44 +16,42 @@ pub fn init_layer_shell(window: &impl LayerShell) {
 
     let edges = CONFIG.lock().unwrap().edges.clone();
 
-    window.set_anchor(Edge::Left, edges.contains_key(&ConfigEdge::Left));
-    window.set_anchor(Edge::Right, edges.contains_key(&ConfigEdge::Right));
-    window.set_anchor(Edge::Top, edges.contains_key(&ConfigEdge::Top));
-    window.set_anchor(Edge::Bottom, edges.contains_key(&ConfigEdge::Bottom));
-
-    for (edge, edge_info) in edges.iter() {
-        window.set_margin((*edge).into(), edge_info.margin + edge_info.padding);
+    for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+        window.set_anchor(edge, edges.contains_key(&ConfigEdge::from(edge)));
     }
+
+    edges.iter().for_each(|(config_edge, edge_info)| {
+        window.set_margin((*config_edge).into(), edge_info.total_margin());
+    });
 }
 
 pub fn margins_update(runtime_data: RuntimeData) {
     let edges = CONFIG.lock().unwrap().edges.clone();
 
     let runtime_data = runtime_data.borrow();
-    let windows = runtime_data.windows.iter();
+    let windows_iter: Box<dyn Iterator<Item = (&u32, &Window)>> =
+        if CONFIG.lock().unwrap().new_on_top {
+            Box::new(runtime_data.windows.iter().rev())
+        } else {
+            Box::new(runtime_data.windows.iter())
+        };
 
-    let new_on_top = CONFIG.lock().unwrap().new_on_top;
-    let iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if new_on_top {
-        Box::new(windows.rev())
-    } else {
-        Box::new(windows)
-    };
-
-    let mut indent = edges
+    let mut top_bottom_indent = edges
         .get(&ConfigEdge::Top)
-        .or(edges.get(&ConfigEdge::Bottom))
-        .unwrap_or(&EdgeInfo::default())
-        .padding;
-    for (_, window) in iter {
+        .or_else(|| edges.get(&ConfigEdge::Bottom))
+        .map_or(0, |edge_info| edge_info.padding);
+
+    for (_, window) in windows_iter {
         if edges.contains_key(&ConfigEdge::Top) {
-            window.inner.set_margin(Edge::Top, indent);
+            window.inner.set_margin(Edge::Top, top_bottom_indent);
         } else if edges.contains_key(&ConfigEdge::Bottom) {
-            window.inner.set_margin(Edge::Bottom, indent);
+            window.inner.set_margin(Edge::Bottom, top_bottom_indent);
         }
-        indent += window.inner.height()
+
+        top_bottom_indent += window.inner.height()
             + edges
                 .get(&ConfigEdge::Left)
-                .or(edges.get(&ConfigEdge::Right))
+                .or_else(|| edges.get(&ConfigEdge::Right))
                 .unwrap_or(&EdgeInfo::default())
                 .margin;
     }
@@ -69,35 +67,35 @@ pub mod pixbuf {
     pub fn new_from_str(value: &str) -> Option<Pixbuf> {
         if PathBuf::from(value).is_absolute() {
             return Pixbuf::from_file(value).ok();
-        } else {
-            let itheme = gtk::IconTheme::for_display(&gdk::Display::default().unwrap());
-            if itheme.has_icon(value) {
-                let ipaint = itheme.lookup_icon(
-                    value,
-                    &["image-missing"],
-                    CONFIG.lock().unwrap().icon_size,
-                    1,
-                    TextDirection::None,
-                    IconLookupFlags::empty(),
-                );
-                let image_path = ipaint
-                    .file()
-                    .unwrap()
-                    .path()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string();
-                return Pixbuf::from_file(image_path).ok();
+        }
+
+        let icon_theme = gtk::IconTheme::for_display(&gdk::Display::default()?);
+
+        if icon_theme.has_icon(value) {
+            let icon_info = icon_theme.lookup_icon(
+                value,
+                &["image-missing"],
+                CONFIG.lock().unwrap().icon_size,
+                1,
+                TextDirection::None,
+                IconLookupFlags::empty(),
+            );
+
+            if let Some(image_path) = icon_info.file().and_then(|file| file.path()) {
+                return Pixbuf::from_file(image_path.to_string_lossy().as_ref()).ok();
             }
         }
+
         None
     }
 
-    pub fn crop_square(value: &Pixbuf) -> Pixbuf {
-        let height = value.height();
-        let width = value.width();
-        let side = height.min(width);
-
-        value.new_subpixbuf((width - side) / 2, (height - side) / 2, side, side)
+    pub fn crop_square(pixbuf: &Pixbuf) -> Pixbuf {
+        let side = pixbuf.height().min(pixbuf.width());
+        pixbuf.new_subpixbuf(
+            (pixbuf.width() - side) / 2,
+            (pixbuf.height() - side) / 2,
+            side,
+            side,
+        )
     }
 }

@@ -42,6 +42,7 @@ mod level_filter {
 }
 
 pub mod edge {
+    use gtk_layer_shell::Edge as GtkEdge;
     use serde::{Deserialize, Serialize};
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -60,13 +61,31 @@ pub mod edge {
         pub padding: i32,
     }
 
-    impl From<Edge> for gtk_layer_shell::Edge {
+    impl EdgeInfo {
+        pub fn total_margin(&self) -> i32 {
+            self.margin + self.padding
+        }
+    }
+
+    impl From<Edge> for GtkEdge {
         fn from(value: Edge) -> Self {
             match value {
-                Edge::Left => gtk_layer_shell::Edge::Left,
-                Edge::Right => gtk_layer_shell::Edge::Right,
-                Edge::Top => gtk_layer_shell::Edge::Top,
-                Edge::Bottom => gtk_layer_shell::Edge::Bottom,
+                Edge::Left => Self::Left,
+                Edge::Right => Self::Right,
+                Edge::Top => Self::Top,
+                Edge::Bottom => Self::Bottom,
+            }
+        }
+    }
+
+    impl From<GtkEdge> for Edge {
+        fn from(value: GtkEdge) -> Self {
+            match value {
+                GtkEdge::Left => Self::Left,
+                GtkEdge::Right => Self::Right,
+                GtkEdge::Top => Self::Top,
+                GtkEdge::Bottom => Self::Bottom,
+                _ => unreachable!(),
             }
         }
     }
@@ -114,7 +133,6 @@ mod defaults {
 
     pub fn edges() -> HashMap<Edge, EdgeInfo> {
         let mut val = HashMap::new();
-
         val.insert(
             Edge::Top,
             EdgeInfo {
@@ -129,7 +147,6 @@ mod defaults {
                 padding: 0,
             },
         );
-
         val
     }
 }
@@ -159,15 +176,20 @@ pub struct Config {
 impl Config {
     pub fn new() -> Option<Self> {
         let config_path = Self::find_config_path()?;
-        println!("Found config file {:?}", config_path);
+        println!("Found config file: {:?}", config_path);
 
-        match ron::from_str::<Self>(&fs::read_to_string(&config_path).unwrap()) {
-            Ok(config) if Self::validate_config(&config) => Some(config),
-            Ok(_) => None,
-            Err(e) => {
-                eprintln!("{}", e);
-                None
-            }
+        let config_string = fs::read_to_string(&config_path).ok()?;
+        let config = ron::from_str::<Self>(&config_string);
+        if let Err(e) = config {
+            eprintln!("{}", e);
+            return None;
+        }
+        let config = config.unwrap();
+
+        if config.validate() {
+            Some(config)
+        } else {
+            None
         }
     }
 
@@ -179,25 +201,20 @@ impl Config {
 
         glib::system_config_dirs().iter().find_map(|dir| {
             let system_config = dir.join("rustyfications/config.ron");
-            if system_config.exists() {
-                Some(system_config)
-            } else {
-                None
-            }
+            system_config.exists().then_some(system_config)
         })
     }
 
-    fn validate_config(config: &Self) -> bool {
-        if config.edges.contains_key(&edge::Edge::Left)
-            && config.edges.contains_key(&edge::Edge::Right)
-            || config.edges.contains_key(&edge::Edge::Top)
-                && config.edges.contains_key(&edge::Edge::Bottom)
+    fn validate(&self) -> bool {
+        if self.edges.contains_key(&edge::Edge::Left) && self.edges.contains_key(&edge::Edge::Right)
+            || self.edges.contains_key(&edge::Edge::Top)
+                && self.edges.contains_key(&edge::Edge::Bottom)
         {
             eprintln!("Using two opposite edges is not allowed");
-            return false;
+            false
+        } else {
+            true
         }
-
-        true
     }
 }
 
@@ -218,13 +235,8 @@ impl Default for Config {
 }
 
 pub static CONFIG: LazyLock<Mutex<Config>> = LazyLock::new(|| {
-    Mutex::new({
-        match Config::new() {
-            Some(c) => c,
-            None => {
-                println!("Using default configuration");
-                Config::default()
-            }
-        }
-    })
+    Mutex::new(Config::new().unwrap_or_else(|| {
+        println!("Using default configuration");
+        Config::default()
+    }))
 });

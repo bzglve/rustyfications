@@ -6,7 +6,7 @@ mod server_info;
 use std::{cmp::Ordering, collections::HashMap, time::Duration, vec};
 
 pub use action::Action;
-use futures::channel::mpsc::Sender;
+use futures::channel::mpsc;
 pub use hints::Hints;
 pub use id::Id;
 #[allow(unused_imports)]
@@ -62,7 +62,7 @@ pub enum Reason {
 #[derive(Debug)]
 pub struct IFace {
     server_info: ServerInfo,
-    sender: Sender<Message>,
+    sender: mpsc::Sender<Message>,
 }
 
 #[interface(name = "org.freedesktop.Notifications")]
@@ -212,7 +212,7 @@ impl IFace {
 }
 
 impl IFace {
-    pub fn new(server_info: ServerInfo, sender: Sender<Message>) -> Self {
+    pub fn new(server_info: ServerInfo, sender: mpsc::Sender<Message>) -> Self {
         info!("Creating new IFace instance");
         Self {
             server_info,

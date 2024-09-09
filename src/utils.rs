@@ -1,10 +1,11 @@
-use std::rc::Rc;
+use std::{error::Error, rc::Rc};
 
-pub use css::load_css;
+pub use css::setup_styling;
 #[allow(unused_imports)]
 use log::*;
 
 use crate::{
+    config::CONFIG,
     dbus::{IFace, IFaceRef, Reason},
     margins_update,
     types::RuntimeData,
@@ -15,6 +16,14 @@ mod css {
 
     use gtk::{gdk, CssProvider};
     use log::{debug, info};
+
+    pub fn setup_styling() {
+        let settings = gtk::Settings::default().unwrap();
+        settings.connect_gtk_theme_name_notify(|_| load_css());
+        // FIXME this doesn't catch theme variant changing
+        // settings.connect_gtk_application_prefer_dark_theme_notify(|_| load_css());
+        load_css();
+    }
 
     pub fn load_css() {
         let provider = CssProvider::new();
@@ -103,4 +112,16 @@ pub async fn close_hook(
     margins_update(runtime_data.clone());
 
     debug!("Margins updated after closing notification with ID: {}", id);
+}
+
+pub fn logger_init() -> Result<(), Box<dyn Error>> {
+    use sys_logger::{connected_to_journal, JournalLog};
+
+    if connected_to_journal() {
+        JournalLog::new()?.install()?;
+    } else {
+        env_logger::init();
+    }
+    log::set_max_level(CONFIG.lock().unwrap().log_level.into());
+    Ok(())
 }
