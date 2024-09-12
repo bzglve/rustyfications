@@ -14,6 +14,11 @@ use super::window::Window;
 pub fn init_layer_shell(window: &impl LayerShell) {
     window.init_layer_shell();
 
+    window.set_layer(CONFIG.lock().unwrap().layer.into());
+    if CONFIG.lock().unwrap().ignore_exclusive_zones {
+        window.set_exclusive_zone(-1);
+    }
+
     let edges = CONFIG.lock().unwrap().edges.clone();
 
     for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
@@ -29,12 +34,12 @@ pub fn margins_update(runtime_data: RuntimeData) {
     let edges = CONFIG.lock().unwrap().edges.clone();
 
     let runtime_data = runtime_data.borrow();
-    let windows_iter: Box<dyn Iterator<Item = (&u32, &Window)>> =
-        if CONFIG.lock().unwrap().new_on_top {
-            Box::new(runtime_data.windows.iter().rev())
-        } else {
-            Box::new(runtime_data.windows.iter())
-        };
+    let windows_iter: Box<dyn Iterator<Item = (&u32, &Window)>> = if !CONFIG.lock().unwrap().reverse
+    {
+        Box::new(runtime_data.windows.iter().rev())
+    } else {
+        Box::new(runtime_data.windows.iter())
+    };
 
     let mut top_bottom_indent = edges
         .get(&ConfigEdge::Top)

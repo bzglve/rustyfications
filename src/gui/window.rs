@@ -225,7 +225,6 @@ impl Window {
             .filter_map(|child| child.ok().and_downcast::<gtk::Widget>())
             .for_each(|child| self.actions_box.remove(&child));
         for action in details.actions.iter().filter(|a| a.key != "default") {
-            // let action_button =
             self.actions_box
                 .append(&self.create_action_button(action, details, iface.clone()));
             self.actions_box.set_visible(true);
@@ -258,6 +257,7 @@ impl Window {
                     if s.reply_entry.text().is_empty() {
                         s.reply_revealer
                             .set_reveal_child(!s.reply_revealer.reveals_child());
+                        // TODO update margins
                     } else {
                         s.reply_entry.emit_activate();
                     }
@@ -269,12 +269,16 @@ impl Window {
                 iface,
                 #[strong]
                 action,
+                #[strong(rename_to=s)]
+                self,
                 move |_| {
                     glib::spawn_future_local(clone!(
                         #[strong]
                         iface,
                         #[strong]
                         action,
+                        #[strong]
+                        s,
                         async move {
                             if let Err(e) = IFace::action_invoked(
                                 iface.signal_context(),
@@ -287,6 +291,10 @@ impl Window {
                                     "Failed to invoke action: {} for window id: {}. Error: {:?}",
                                     action.key, details.id, e
                                 );
+                            }
+
+                            if CONFIG.lock().unwrap().stay_on_action {
+                                s.close(Reason::Closed);
                             }
                         }
                     ));
@@ -573,7 +581,9 @@ impl Window {
                             .await
                             .unwrap();
 
-                            s.close(Reason::Dismissed);
+                            if CONFIG.lock().unwrap().stay_on_action {
+                                s.close(Reason::Dismissed);
+                            }
                         }
                     }
                 ));

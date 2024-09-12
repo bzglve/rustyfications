@@ -1,4 +1,10 @@
 (
+    // Background, Bottom, Top, Overlay
+    layer: Top,
+
+    // If set to `true` notification will not respect already allocated exclusive zones (bar, etc)
+    ignore_exclusive_zones: false,
+
     // we are respect freedesktop timeouts
     // this parameter is for notification with undefined expiration
     expire_timeout: 5000,
@@ -20,8 +26,13 @@
         "dismiss": "window-close",
     },
 
-    // most recent notifications appears from anchored edge
-    new_on_top: true,
+    // the oldest notification will be closer to anchored edge
+    reverse: false,
+
+    // Action (button click/default action) should not close notification
+    // Notification sender can call close on action but not all do that
+    // (setting this to `true` will respect to what sender do on action)
+    stay_on_action: false,
 
     // (width, height)
     // (410, 30) - optimal size for display 40 characters in 12px font with 5px window "padding"
